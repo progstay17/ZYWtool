@@ -1,0 +1,214 @@
+"""Preview frame per sesi: ambil N frame kamera yang tersebar merata, susun jadi satu gambar PNG per sesi.
+Output: C:/ZYWtool/preview/<folder grup>/<session>_cam<N>.png
+Pakai: python preview_frames.py <folder root atau folder sesi> [--n 6] [--cam 0] [--cam 0,1]
+"""
+import glob
+import math
+import os
+import sys
+
+import av
+from PIL import Image, ImageDraw
+from mcap.reader import make_reader
+
+HERE = (os.environ.get("ZYWTOOL_HOME") or
+        (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
+         else os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, HERE)
+from zyw_core import find_session_dirs  # noqa: E402
+
+OUT_ROOT = os.path.join(HERE, "preview")
+THUMB_W, THUMB_H, LABEL_H, COLS = 360, 203, 22, 4
+
+
+def _varint(b, i):
+    shift = result = 0
+    while True:
+        byte = b[i]
+        i += 1
+        result |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return result, i
+        shift += 7
+
+
+def parse_proto(b):
+    """Parser protobuf minimal untuk foxglove.CompressedVideo: 1=timestamp, 2=frame_id, 3=data, 4=format."""
+    i, out = 0, {}
+    while i < len(b):
+        key, i = _varint(b, i)
+        fn, wt = key >> 3, key & 7
+        if wt == 0:
+            v, i = _varint(b, i)
+            out.setdefault(fn, []).append(v)
+        elif wt == 2:
+            n, i = _varint(b, i)
+            out.setdefault(fn, []).append(b[i:i + n])
+            i += n
+        elif wt == 1:
+            i += 8
+        elif wt == 5:
+            i += 4
+        else:
+            break
+    return out
+
+
+def is_keyframe(data, fmt):
+    b = bytes(data)
+    i = 0
+    while True:
+        p = b.find(b"\x00\x00\x01", i)
+        if p < 0 or p + 3 >= len(b):
+            return False
+        byte = b[p + 3]
+        if fmt == "h265":
+            t = (byte >> 1) & 0x3F
+            if 16 <= t <= 21:
+                return True
+        elif byte & 0x1F == 5:
+            return True
+        i = p + 3
+
+
+def topic_count(path, topic):
+    with open(path, "rb") as f:
+        summ = make_reader(f).get_summary()
+    if summ is None or summ.statistics is None:
+        return None
+    for cid, ch in summ.channels.items():
+        if ch.topic == topic:
+            return summ.statistics.channel_message_counts.get(cid, 0)
+    return 0
+
+
+def decode_last(packets, fmt):
+    """Decode dari keyframe sampai paket terakhir; kembalikan frame terakhir (atau None)."""
+    ctx = av.CodecContext.create("hevc" if fmt == "h265" else "h264", "r")
+    last = None
+    for data in packets:
+        for fr in ctx.decode(av.Packet(data)):
+            last = fr
+    for fr in ctx.decode(None):
+        last = fr
+    return last
+
+
+def frame_at(path, topic, t_target):
+    """Ambil frame di waktu t_target (ns). Hanya membaca jendela 3 dtk sebelumnya (pakai index mcap),
+    decode dari keyframe pertama di jendela itu. Kembalikan (frame PIL, log_time) atau (None, None)."""
+    lo = max(0, t_target - 3_000_000_000)
+    with open(path, "rb") as fh:
+        msgs = [m for _, _, m in make_reader(fh).iter_messages(
+            topics=[topic], starting_at=lo, ending_at=t_target)]
+    if not msgs:
+        return None, None
+    parsed = []
+    for m in msgs:
+        p = parse_proto(m.data)
+        parsed.append((p.get(3, [b""])[0], p.get(4, [b""])[0].decode("utf-8", "replace")))
+    key = next((i for i, (d, f) in enumerate(parsed) if is_keyframe(d, f)), None)
+    if key is None:
+        return None, None
+    fr = decode_last([d for d, _ in parsed[key:]], parsed[-1][1])
+    if fr is None:
+        return None, None
+    return fr.to_image(), msgs[-1].log_time
+
+
+def sample_session(sess_dir, n, cam):
+    topic = f"/ego/camera/{cam}"
+    files = sorted(glob.glob(os.path.join(sess_dir, "ego_*.mcap")))
+    infos = []
+    for f in files:
+        try:
+            with open(f, "rb") as fh:
+                summ = make_reader(fh).get_summary()
+            if summ is None or summ.statistics is None:
+                raise ValueError("summary tidak terbaca")
+            cid = [c for c, ch in summ.channels.items() if ch.topic == topic]
+            cnt = summ.statistics.channel_message_counts.get(cid[0], 0) if cid else 0
+            infos.append((f, cnt, summ.statistics.message_start_time, summ.statistics.message_end_time))
+        except Exception as e:
+            print(f"  lewati {os.path.basename(f)}: {type(e).__name__}: {e}", flush=True)
+            infos.append((f, 0, 0, 0))
+    total = sum(i[1] for i in infos)
+    if total == 0:
+        return []
+    first_lt = infos[0][2]
+    targets = sorted({int((k + 0.5) * total / n) for k in range(n)})
+    results, base = [], 0
+    ti = 0
+    for f, cnt, st, en in infos:
+        while ti < len(targets) and targets[ti] < base + cnt:
+            local = targets[ti] - base
+            t_target = int(st + (local / cnt) * (en - st))
+            try:
+                img, lt = frame_at(f, topic, t_target)
+            except Exception as e:
+                print(f"  frame #{targets[ti]} dilewati: {type(e).__name__}: {e}", flush=True)
+                img, lt = None, None
+            if img is not None:
+                results.append((targets[ti], (lt - first_lt) / 1e9, img))
+            ti += 1
+        base += cnt
+    return results
+
+
+def contact_sheet(frames, title):
+    rows = math.ceil(len(frames) / COLS)
+    sheet = Image.new("RGB", (COLS * THUMB_W + 10, rows * (THUMB_H + LABEL_H) + 30), (30, 30, 30))
+    draw = ImageDraw.Draw(sheet)
+    draw.text((6, 6), title, fill=(230, 230, 230))
+    for k, (idx, t, img) in enumerate(frames):
+        r, c = divmod(k, COLS)
+        x, y = c * THUMB_W + 5, 30 + r * (THUMB_H + LABEL_H)
+        sheet.paste(img.resize((THUMB_W, THUMB_H)), (x, y + LABEL_H))
+        mm, ss = divmod(int(t), 60)
+        draw.text((x + 4, y + 5), f"#{idx}  {mm:02d}:{ss:02d}", fill=(255, 255, 255))
+    return sheet
+
+
+def preview_session(sess_dir, n=6, cams=(0,)):
+    group = os.path.basename(os.path.dirname(sess_dir))
+    name = os.path.basename(sess_dir)
+    written = []
+    for cam in cams:
+        frames = sample_session(sess_dir, n, cam)
+        if not frames:
+            continue
+        out_dir = os.path.join(OUT_ROOT, group)
+        os.makedirs(out_dir, exist_ok=True)
+        out = os.path.join(out_dir, f"{name}_cam{cam}.png")
+        contact_sheet(frames, f"{group} | {name} | camera {cam}").save(out)
+        written.append(out)
+    return written
+
+
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args:
+        print(__doc__)
+        return 1
+    target = args[0]
+    n, cams = 16, (0,)
+    if "--n" in args:
+        n = int(args[args.index("--n") + 1])
+    if "--cam" in args:
+        cams = tuple(int(x) for x in args[args.index("--cam") + 1].split(","))
+    if os.path.isfile(os.path.join(target, "session.json")):
+        sessions = [target]
+    else:
+        sessions = find_session_dirs(target)
+    print(f"{len(sessions)} sesi, {n} frame, kamera {cams}")
+    for sd in sessions:
+        try:
+            outs = preview_session(sd, n, cams)
+            print("OK  ", os.path.basename(sd), "->", outs)
+        except Exception as e:
+            print("GAGAL", os.path.basename(sd), type(e).__name__, e)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

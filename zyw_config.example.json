@@ -1,0 +1,65 @@
+﻿{
+  "shifts": [
+    [
+      "07:00",
+      "11:00",
+      "7 AM - 11 AM",
+      1
+    ],
+    [
+      "12:00",
+      "16:00",
+      "12 PM - 4 PM",
+      2
+    ],
+    [
+      "16:10",
+      "18:30",
+      "4:10 PM - 6:30 PM",
+      3
+    ],
+    [
+      "18:30",
+      "20:30",
+      "6:30 PM - 8:30 PM",
+      4
+    ]
+  ],
+  "qc": "",
+  "supervisor": "",
+  "activities": {
+    "Kitchen": [
+      "kitchen",
+      "dapur"
+    ],
+    "Livingroom": [
+      "livingroom",
+      "living room",
+      "living",
+      "ruang tamu",
+      "ruang keluarga"
+    ],
+    "Bedroom": [
+      "bedroom",
+      "kamar tidur",
+      "kamar"
+    ]
+  },
+  "hand_check": {
+    "frames": 20,
+    "sample_every_s": 15,
+    "min_frames": 20,
+    "max_frames": 120,
+    "max_error_pct": 30,
+    "rule": "strict",
+    "conf": 0.3,
+    "tiles": true,
+    "cam": 0,
+    "report": true,
+    "use_cache": false
+  },
+  "excel_path": "",
+  "organized_root": "",
+  "data_root": ""
+}
+

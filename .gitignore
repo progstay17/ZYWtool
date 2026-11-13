@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local configuration and secrets
+zyw_config.json
+*.env
+.env*
+!.env.example
+
+# Operational/private data ? never publish
+Excel/
+ref/
+logs/
+reports/
+preview/
+hand_check/
+_cache/
+models/
+*.xlsx
+*.xls
+*.xlsm
+*.mcap
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated reports, screenshots and temporary test fixtures
+_audit_runs/
+_uji/
+*_err.txt
+*_out.txt
+*_shot*.png
+_report_shot*.png
+*_backup_*.py
+patch_*.py
+
+# Build and release artifacts
+build/
+dist/
+release/
+*.spec
+*.log

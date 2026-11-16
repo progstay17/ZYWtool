@@ -164,12 +164,12 @@ def _distance_from_blocked(t, blocked):
     return best
 
 
-def _even_timeline_targets(start_ns, end_ns, n, blocked):
-    """Pilih satu titik waktu per bin timeline, sejauh mungkin dari sampel Hand Check."""
+def _even_timeline_candidates(start_ns, end_ns, n, blocked):
+    """Urutkan banyak kandidat per bin; kandidat alternatif dipakai saat tabrakan."""
     if n <= 0 or end_ns <= start_ns:
         return []
     span = end_ns - start_ns
-    chosen = []
+    slots = []
     for slot in range(n):
         lo = start_ns + span * slot / n
         hi = start_ns + span * (slot + 1) / n
@@ -185,24 +185,22 @@ def _even_timeline_targets(start_ns, end_ns, n, blocked):
                 merged.append((a, b))
         points = [lo] + [v for pair in merged for v in pair] + [hi]
         candidates = {
-            int(lo + width * frac) for frac in (0.10, 0.25, 0.50, 0.75, 0.90)
+            int(lo + width * frac)
+            for frac in (0.025, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30,
+                         0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65,
+                         0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.975)
         }
         for a, b in zip(points, points[1:]):
             if b > a:
                 candidates.add(int((a + b) / 2))
-        candidates = [t for t in candidates if lo <= t <= hi]
-        if not candidates:
-            continue
-        best = max(candidates, key=lambda t: (
-            _distance_from_blocked(t, blocked),
-            -abs(t - mid)
-        ))
-        # Jangan paksa mengambil frame jika seluruh bin berimpit dengan sampel
-        # Hand Check. Lebih baik preview lebih sedikit daripada mengulang frame.
-        if blocked and _distance_from_blocked(best, blocked) <= 0:
-            continue
-        chosen.append(int(best))
-    return chosen
+        # Kandidat yang paling jauh dari Hand Check dicoba lebih dahulu.
+        ordered = sorted(
+            (t for t in candidates if lo <= t <= hi),
+            key=lambda t: (_distance_from_blocked(t, blocked), -abs(t - mid)),
+            reverse=True,
+        )
+        slots.append(ordered)
+    return slots
 
 
 def sample_session(sess_dir, n, cam):
@@ -233,33 +231,47 @@ def sample_session(sess_dir, n, cam):
         return []
 
     # Gunakan konfigurasi Hand Check yang benar-benar aktif. Sampelnya tidak disentuh
-    # dan tidak dihitung ulang; Preview hanya menjauhi timestamp tersebut.
+    # dan tidak dihitung ulang; Preview akan mencoba kandidat waktu alternatif dalam slot yang sama hingga menemukan frame unik di luar sampel tersebut.
     blocked = _handcheck_blocked_intervals(infos, cam)
-    targets = _even_timeline_targets(session_start, session_end, requested, blocked)
+    candidate_slots = _even_timeline_candidates(session_start, session_end, requested, blocked)
 
     results, seen = [], set()
-    for slot, t_target in enumerate(targets, 1):
-        # Jika ada jeda antarfail MCAP, gunakan file dengan waktu terdekat lalu clamp.
-        path, _cnt, st, en = min(
-            infos,
-            key=lambda item: 0 if item[2] <= t_target <= item[3]
-            else min(abs(t_target - item[2]), abs(t_target - item[3]))
-        )
-        read_at = min(max(t_target, st), en)
-        try:
-            img, log_time = frame_at(path, topic, read_at)
-        except Exception as e:
-            print(f"  preview titik {slot} dilewati: {type(e).__name__}: {e}", flush=True)
-            img, log_time = None, None
-        if img is None or log_time is None or log_time in seen:
+    for slot, candidates in enumerate(candidate_slots, 1):
+        selected = None
+        for t_target in candidates:
+            # Jika ada jeda antarfail MCAP, gunakan file dengan waktu terdekat lalu clamp.
+            path, _cnt, st, en = min(
+                infos,
+                key=lambda item: 0 if item[2] <= t_target <= item[3]
+                else min(abs(t_target - item[2]), abs(t_target - item[3]))
+            )
+            read_at = min(max(t_target, st), en)
+            try:
+                img, log_time = frame_at(path, topic, read_at)
+            except Exception as e:
+                print(f"  kandidat preview {slot} gagal didecode: {type(e).__name__}: {e}", flush=True)
+                continue
+            # Validasi timestamp frame hasil decode, bukan hanya target waktu.
+            # Ini mencegah frame yang sama terambil karena decoder mundur ke frame sebelumnya.
+            if img is None or log_time is None or log_time in seen:
+                continue
+            if blocked and _distance_from_blocked(log_time, blocked) <= 0:
+                continue
+            selected = (log_time, img)
+            break
+
+        if selected is None:
+            print(f"  slot preview {slot}: tidak ditemukan frame alternatif yang valid", flush=True)
             continue
+
+        log_time, img = selected
         seen.add(log_time)
         elapsed = max(0.0, (log_time - session_start) / 1e9)
         percent = min(100.0, max(0.0, 100.0 * (log_time - session_start) / (session_end - session_start)))
         results.append((slot, elapsed, percent, img))
 
     if len(results) < requested:
-        print(f"  catatan: {len(results)}/{requested} titik preview tersedia; titik yang bertabrakan dengan Hand Check atau gagal didecode dilewati", flush=True)
+        print(f"  catatan: {len(results)}/{requested} titik preview tersedia setelah mencoba kandidat alternatif; sebagian slot mungkin tidak memiliki frame valid", flush=True)
     return results
 
 def contact_sheet(frames, title):

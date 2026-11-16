@@ -94,7 +94,7 @@ Core modules:
 
 | File | Responsibility |
 |---|---|
-| zywtool.py | Tkinter desktop application |
+| zywtool.py | Tkinter desktop application (version 1.0.1) |
 | zyw_core.py | MCAP scanning, session logic, configuration, Excel and folder operations |
 | handcheck.py | MediaPipe-based optional hand check and HTML reporting |
 | handreport.py | Hand-check report generation |
@@ -109,6 +109,8 @@ python -m compileall -q handcheck.py handreport.py jobs.py preview_frames.py zyw
 
 Build the portable Windows application on Windows:
 .\build_portable.ps1
+
+The build script creates `release\ZYWtool-Windows-Portable.zip` and a `VERSION.txt` file. The archive contains the `ZYWtool` application folder, installer/uninstaller scripts, README, license, model notice, and third-party notices.
 
 ## Known limitations
 
@@ -125,4 +127,3 @@ This application may process recording metadata, recorder identifiers, operation
 ## License
 
 The ZYWtool source code is licensed under the MIT License (see LICENSE). The separately downloaded MediaPipe model is a third-party asset under Apache License 2.0; see MODEL.md and THIRD_PARTY_NOTICES.md.
-

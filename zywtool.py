@@ -614,10 +614,10 @@ class App:
             return
         try:
             self.jobs.start_process("preview", "Preview frames", target,
-                                    ([sys.executable, "--preview-frames", target, "--n", "16", "--cam", "0"]
+                                    ([sys.executable, "--preview-frames", target, "--n", "30", "--cam", "0"]
                                      if getattr(sys, "frozen", False) else
                                      [sys.executable, os.path.join(HERE, "preview_frames.py"), target,
-                                      "--n", "16", "--cam", "0"]),
+                                      "--n", "30", "--cam", "0"]),
                                     output=os.path.join(HERE, "preview"))
         except jobs.JobConflict as e:
             messagebox.showwarning("Preview frames", str(e))

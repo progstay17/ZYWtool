@@ -3,6 +3,7 @@ Output: C:/ZYWtool/preview/<folder grup>/<session>_cam<N>.png
 Pakai: python preview_frames.py <folder root atau folder sesi> [--n 30] [--cam 0] [--cam 0,1]
 """
 import glob
+import hashlib
 import math
 import os
 import sys
@@ -236,6 +237,7 @@ def sample_session(sess_dir, n, cam):
     candidate_slots = _even_timeline_candidates(session_start, session_end, requested, blocked)
 
     results, seen = [], set()
+    seen_images = set()
     for slot, candidates in enumerate(candidate_slots, 1):
         selected = None
         for t_target in candidates:
@@ -257,15 +259,21 @@ def sample_session(sess_dir, n, cam):
                 continue
             if blocked and _distance_from_blocked(log_time, blocked) <= 0:
                 continue
-            selected = (log_time, img)
+            # Bandingkan isi piksel juga: timestamp berbeda belum tentu berarti
+            # gambar referensinya berbeda (misalnya frame duplikat dari encoder).
+            image_key = hashlib.blake2b(img.tobytes(), digest_size=16).digest()
+            if image_key in seen_images:
+                continue
+            selected = (log_time, img, image_key)
             break
 
         if selected is None:
             print(f"  slot preview {slot}: tidak ditemukan frame alternatif yang valid", flush=True)
             continue
 
-        log_time, img = selected
+        log_time, img, image_key = selected
         seen.add(log_time)
+        seen_images.add(image_key)
         elapsed = max(0.0, (log_time - session_start) / 1e9)
         percent = min(100.0, max(0.0, 100.0 * (log_time - session_start) / (session_end - session_start)))
         results.append((slot, elapsed, percent, img))

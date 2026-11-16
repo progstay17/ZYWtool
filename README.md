@@ -1,5 +1,7 @@
 ﻿# ZYWtool
 
+**Version: 1.0.1**
+
 **Recording Operations Toolkit** - desktop utility for reviewing MCAP recording sessions, checking recording integrity, organizing session folders, and preparing operational Excel reports.
 
 > ZYWtool is designed for an internal recording-operations workflow. Review generated flags and reports before making operational decisions. The hand-check feature is probabilistic and supports manual review; it does not replace it.
@@ -14,6 +16,7 @@
 - **Folder tools** - organizes/copies session folders to a configured destination.
 - **Optional hand check** - uses MediaPipe Hand Landmarker to sample frames and flag sessions for manual review.
 - **HTML hand-check reports** - can produce per-session and group reports with supporting thumbnails.
+- **Session footage preview (v1.0.1)** - creates up to 30 evenly spaced timeline snapshots per session, independent of video FPS. If a candidate collides with a Hand Check sample or decodes to a duplicate frame, Preview tries alternate timestamps inside the same timeline slot until it finds a unique frame. Each tile shows its session percentage and timestamp.
 - **Background jobs** - manages long-running operations separately from the main GUI.
 - **Arrange undo utility** - undo_arrange.py provides a guarded workflow to inspect and reverse supported arrange operations.
 
@@ -34,7 +37,7 @@ Run the application: python zywtool.py
 
 Optional command-line tools:
 - python handcheck.py "D:\recordings"
-- python preview_frames.py "D:\recordings" --n 16 --cam 0
+- python preview_frames.py "D:\recordings" --n 30 --cam 0
 - python undo_arrange.py --help
 
 ## Install the Windows portable release
@@ -91,11 +94,11 @@ Core modules:
 
 | File | Responsibility |
 |---|---|
-| zywtool.py | Tkinter desktop application |
+| zywtool.py | Tkinter desktop application (version 1.0.1) |
 | zyw_core.py | MCAP scanning, session logic, configuration, Excel and folder operations |
 | handcheck.py | MediaPipe-based optional hand check and HTML reporting |
 | handreport.py | Hand-check report generation |
-| preview_frames.py | Frame preview extraction |
+| preview_frames.py | Time-based footage preview, offset from Hand Check sample points |
 | jobs.py | Background job management |
 | undo_arrange.py | Guarded arrange undo utility |
 
@@ -106,6 +109,8 @@ python -m compileall -q handcheck.py handreport.py jobs.py preview_frames.py zyw
 
 Build the portable Windows application on Windows:
 .\build_portable.ps1
+
+The build script creates `release\ZYWtool-Windows-Portable.zip` and a `VERSION.txt` file. The archive contains the `ZYWtool` application folder, installer/uninstaller scripts, README, license, model notice, and third-party notices.
 
 ## Known limitations
 
@@ -122,4 +127,3 @@ This application may process recording metadata, recorder identifiers, operation
 ## License
 
 The ZYWtool source code is licensed under the MIT License (see LICENSE). The separately downloaded MediaPipe model is a third-party asset under Apache License 2.0; see MODEL.md and THIRD_PARTY_NOTICES.md.
-

@@ -1,8 +1,9 @@
-"""Preview frame per sesi: ambil N frame kamera yang tersebar merata, susun jadi satu gambar PNG per sesi.
+"""Preview frame per sesi: ambil maksimum N frame yang tersebar merata berdasarkan waktu session, hindari timestamp sampel Hand Check, lalu susun jadi contact sheet PNG.
 Output: C:/ZYWtool/preview/<folder grup>/<session>_cam<N>.png
-Pakai: python preview_frames.py <folder root atau folder sesi> [--n 6] [--cam 0] [--cam 0,1]
+Pakai: python preview_frames.py <folder root atau folder sesi> [--n 30] [--cam 0] [--cam 0,1]
 """
 import glob
+import hashlib
 import math
 import os
 import sys
@@ -15,6 +16,7 @@ HERE = (os.environ.get("ZYWTOOL_HOME") or
         (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
          else os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, HERE)
+import zyw_core as core  # noqa: E402
 from zyw_core import find_session_dirs  # noqa: E402
 
 OUT_ROOT = os.path.join(HERE, "preview")
@@ -116,7 +118,94 @@ def frame_at(path, topic, t_target):
     return fr.to_image(), msgs[-1].log_time
 
 
+def _handcheck_blocked_intervals(infos, cam):
+    """Rentang waktu sampel Hand Check agar Preview tidak mengambil frame yang sama."""
+    try:
+        import handcheck
+        cfg = core.load_config()
+        hc = handcheck.get_cfg(cfg.get("hand_check", {}))
+        if int(hc.get("cam", 0)) != int(cam):
+            return []
+        total = sum(i[1] for i in infos)
+        duration = sum((i[3] - i[2]) / 1e9 for i in infos if i[1] > 0)
+        if total <= 0 or duration <= 0:
+            return []
+        n = min(handcheck.choose_n(duration, hc), total)
+    except Exception as exc:
+        print(f"  konfigurasi Hand Check tidak terbaca; gunakan jarak aman default: {exc}", flush=True)
+        total = sum(i[1] for i in infos)
+        n = min(20, total)
+        if total <= 0 or n <= 0:
+            return []
+
+    targets = sorted({int((k + 0.5) * total / n) for k in range(n)})
+    blocked, base, ti = [], 0, 0
+    for _path, cnt, st, en in infos:
+        while ti < len(targets) and targets[ti] < base + cnt:
+            local = targets[ti] - base
+            t_target = int(st + (local / cnt) * (en - st))
+            # Frame Hand Check yang didecode dapat berada sedikit sebelum target.
+            # Margin dua interval frame menghindari pemilihan ulang gambar yang sama.
+            frame_step = max(1, int((en - st) / max(cnt, 1)))
+            margin = max(50_000_000, frame_step * 2)
+            blocked.append((t_target - margin, t_target + margin))
+            ti += 1
+        base += cnt
+    return blocked
+
+
+def _distance_from_blocked(t, blocked):
+    if not blocked:
+        return float("inf")
+    best = float("inf")
+    for lo, hi in blocked:
+        if lo <= t <= hi:
+            return 0
+        best = min(best, lo - t if t < lo else t - hi)
+    return best
+
+
+def _even_timeline_candidates(start_ns, end_ns, n, blocked):
+    """Urutkan banyak kandidat per bin; kandidat alternatif dipakai saat tabrakan."""
+    if n <= 0 or end_ns <= start_ns:
+        return []
+    span = end_ns - start_ns
+    slots = []
+    for slot in range(n):
+        lo = start_ns + span * slot / n
+        hi = start_ns + span * (slot + 1) / n
+        width = hi - lo
+        mid = (lo + hi) / 2
+        intervals = [(max(lo, a), min(hi, b)) for a, b in blocked if b >= lo and a <= hi]
+        intervals.sort()
+        merged = []
+        for a, b in intervals:
+            if merged and a <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+            else:
+                merged.append((a, b))
+        points = [lo] + [v for pair in merged for v in pair] + [hi]
+        candidates = {
+            int(lo + width * frac)
+            for frac in (0.025, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30,
+                         0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65,
+                         0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.975)
+        }
+        for a, b in zip(points, points[1:]):
+            if b > a:
+                candidates.add(int((a + b) / 2))
+        # Kandidat yang paling jauh dari Hand Check dicoba lebih dahulu.
+        ordered = sorted(
+            (t for t in candidates if lo <= t <= hi),
+            key=lambda t: (_distance_from_blocked(t, blocked), -abs(t - mid)),
+            reverse=True,
+        )
+        slots.append(ordered)
+    return slots
+
+
 def sample_session(sess_dir, n, cam):
+    """Ambil maksimum N frame yang merata berdasarkan waktu, bukan jumlah frame/FPS."""
     topic = f"/ego/camera/{cam}"
     files = sorted(glob.glob(os.path.join(sess_dir, "ego_*.mcap")))
     infos = []
@@ -128,48 +217,86 @@ def sample_session(sess_dir, n, cam):
                 raise ValueError("summary tidak terbaca")
             cid = [c for c, ch in summ.channels.items() if ch.topic == topic]
             cnt = summ.statistics.channel_message_counts.get(cid[0], 0) if cid else 0
-            infos.append((f, cnt, summ.statistics.message_start_time, summ.statistics.message_end_time))
+            if cnt:
+                infos.append((f, cnt, summ.statistics.message_start_time, summ.statistics.message_end_time))
         except Exception as e:
             print(f"  lewati {os.path.basename(f)}: {type(e).__name__}: {e}", flush=True)
-            infos.append((f, 0, 0, 0))
-    total = sum(i[1] for i in infos)
-    if total == 0:
-        return []
-    first_lt = infos[0][2]
-    targets = sorted({int((k + 0.5) * total / n) for k in range(n)})
-    results, base = [], 0
-    ti = 0
-    for f, cnt, st, en in infos:
-        while ti < len(targets) and targets[ti] < base + cnt:
-            local = targets[ti] - base
-            t_target = int(st + (local / cnt) * (en - st))
-            try:
-                img, lt = frame_at(f, topic, t_target)
-            except Exception as e:
-                print(f"  frame #{targets[ti]} dilewati: {type(e).__name__}: {e}", flush=True)
-                img, lt = None, None
-            if img is not None:
-                results.append((targets[ti], (lt - first_lt) / 1e9, img))
-            ti += 1
-        base += cnt
-    return results
 
+    total = sum(i[1] for i in infos)
+    if total == 0 or n <= 0:
+        return []
+    requested = min(int(n), total)
+    session_start = min(i[2] for i in infos)
+    session_end = max(i[3] for i in infos)
+    if session_end <= session_start:
+        return []
+
+    # Gunakan konfigurasi Hand Check yang benar-benar aktif. Sampelnya tidak disentuh
+    # dan tidak dihitung ulang; Preview akan mencoba kandidat waktu alternatif dalam slot yang sama hingga menemukan frame unik di luar sampel tersebut.
+    blocked = _handcheck_blocked_intervals(infos, cam)
+    candidate_slots = _even_timeline_candidates(session_start, session_end, requested, blocked)
+
+    results, seen = [], set()
+    seen_images = set()
+    for slot, candidates in enumerate(candidate_slots, 1):
+        selected = None
+        for t_target in candidates:
+            # Jika ada jeda antarfail MCAP, gunakan file dengan waktu terdekat lalu clamp.
+            path, _cnt, st, en = min(
+                infos,
+                key=lambda item: 0 if item[2] <= t_target <= item[3]
+                else min(abs(t_target - item[2]), abs(t_target - item[3]))
+            )
+            read_at = min(max(t_target, st), en)
+            try:
+                img, log_time = frame_at(path, topic, read_at)
+            except Exception as e:
+                print(f"  kandidat preview {slot} gagal didecode: {type(e).__name__}: {e}", flush=True)
+                continue
+            # Validasi timestamp frame hasil decode, bukan hanya target waktu.
+            # Ini mencegah frame yang sama terambil karena decoder mundur ke frame sebelumnya.
+            if img is None or log_time is None or log_time in seen:
+                continue
+            if blocked and _distance_from_blocked(log_time, blocked) <= 0:
+                continue
+            # Bandingkan isi piksel juga: timestamp berbeda belum tentu berarti
+            # gambar referensinya berbeda (misalnya frame duplikat dari encoder).
+            image_key = hashlib.blake2b(img.tobytes(), digest_size=16).digest()
+            if image_key in seen_images:
+                continue
+            selected = (log_time, img, image_key)
+            break
+
+        if selected is None:
+            print(f"  slot preview {slot}: tidak ditemukan frame alternatif yang valid", flush=True)
+            continue
+
+        log_time, img, image_key = selected
+        seen.add(log_time)
+        seen_images.add(image_key)
+        elapsed = max(0.0, (log_time - session_start) / 1e9)
+        percent = min(100.0, max(0.0, 100.0 * (log_time - session_start) / (session_end - session_start)))
+        results.append((slot, elapsed, percent, img))
+
+    if len(results) < requested:
+        print(f"  catatan: {len(results)}/{requested} titik preview tersedia setelah mencoba kandidat alternatif; sebagian slot mungkin tidak memiliki frame valid", flush=True)
+    return results
 
 def contact_sheet(frames, title):
     rows = math.ceil(len(frames) / COLS)
     sheet = Image.new("RGB", (COLS * THUMB_W + 10, rows * (THUMB_H + LABEL_H) + 30), (30, 30, 30))
     draw = ImageDraw.Draw(sheet)
     draw.text((6, 6), title, fill=(230, 230, 230))
-    for k, (idx, t, img) in enumerate(frames):
+    for k, (idx, t, pct, img) in enumerate(frames):
         r, c = divmod(k, COLS)
         x, y = c * THUMB_W + 5, 30 + r * (THUMB_H + LABEL_H)
         sheet.paste(img.resize((THUMB_W, THUMB_H)), (x, y + LABEL_H))
         mm, ss = divmod(int(t), 60)
-        draw.text((x + 4, y + 5), f"#{idx}  {mm:02d}:{ss:02d}", fill=(255, 255, 255))
+        draw.text((x + 4, y + 5), f"P{idx:02d}  {pct:05.1f}%  {mm:02d}:{ss:02d}", fill=(255, 255, 255))
     return sheet
 
 
-def preview_session(sess_dir, n=6, cams=(0,)):
+def preview_session(sess_dir, n=30, cams=(0,)):
     group = os.path.basename(os.path.dirname(sess_dir))
     name = os.path.basename(sess_dir)
     written = []
@@ -180,7 +307,7 @@ def preview_session(sess_dir, n=6, cams=(0,)):
         out_dir = os.path.join(OUT_ROOT, group)
         os.makedirs(out_dir, exist_ok=True)
         out = os.path.join(out_dir, f"{name}_cam{cam}.png")
-        contact_sheet(frames, f"{group} | {name} | camera {cam}").save(out)
+        contact_sheet(frames, f"{group} | {name} | camera {cam} | timeline preview").save(out)
         written.append(out)
     return written
 
@@ -191,7 +318,7 @@ def main(argv=None):
         print(__doc__)
         return 1
     target = args[0]
-    n, cams = 16, (0,)
+    n, cams = 30, (0,)
     if "--n" in args:
         n = int(args[args.index("--n") + 1])
     if "--cam" in args:
@@ -200,7 +327,7 @@ def main(argv=None):
         sessions = [target]
     else:
         sessions = find_session_dirs(target)
-    print(f"{len(sessions)} sesi, {n} frame, kamera {cams}")
+    print(f"{len(sessions)} sesi, maksimum {n} titik timeline per sesi, kamera {cams}")
     for sd in sessions:
         try:
             outs = preview_session(sd, n, cams)

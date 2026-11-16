@@ -556,7 +556,7 @@ def export_excel(sessions, cfg):
         if ws.cell(r, 1).value and ws.cell(r, 2).value:
             key = _key_of_row([ws.cell(r, c).value for c in range(1, 16)])
             saved_status[key] = [
-                None if str(ws.cell(r + i, 4).value or '').startswith('鈽?) else ws.cell(r + i, 4).value
+                None if str(ws.cell(r + i, 4).value or '').startswith(('\u2610', '\u2611', '\u2612', '\u2713', '\u2714')) else ws.cell(r + i, 4).value
                 for i in range(3)]
         r += 3
 
@@ -735,4 +735,3 @@ def print_stats(folder, full=False):
     print(f"{'TOTAL':<70} {total['sesi']:>5} {total['size']/1e9:>10.2f} {fmt_hms(total['durasi_s']):>10} "
           f"{total['ok']:>4} {total['warn']:>5} {total['corrupt']:>8}")
     print(f"Tersimpan: {save_folder_summary(folder, total, groups)}")
-

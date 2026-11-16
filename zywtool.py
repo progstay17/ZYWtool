@@ -18,6 +18,8 @@ import zyw_core as core  # noqa: E402
 import handcheck  # noqa: E402
 import jobs  # noqa: E402
 
+VERSION = "1.0.1"
+
 BG = "#F3F4F6"
 SURFACE = "#FFFFFF"
 INK = "#17191D"
@@ -38,7 +40,7 @@ def fmt_hms(seconds):
 class App:
     def __init__(self, root):
         self.root = root
-        root.title(f"ZYWtool | Recording Operations | {core.CREDIT}")
+        root.title(f"ZYWtool v{VERSION} | Recording Operations | {core.CREDIT}")
         root.geometry("1440x900")
         root.minsize(1120, 720)
         root.configure(bg=BG)
@@ -93,7 +95,7 @@ class App:
         bottom.pack(side="bottom", fill="x", padx=20, pady=22)
         tk.Label(bottom, text="LOCAL WORKSPACE", bg=DARK, fg="#8D929B",
                  font=("Segoe UI", 8, "bold")).pack(anchor="w")
-        tk.Label(bottom, text="MCAP 鈥?ZY WHITE", bg=DARK, fg="#D9DCE1",
+        tk.Label(bottom, text="MCAP / ZY WHITE", bg=DARK, fg="#D9DCE1",
                  font=("Segoe UI", 9)).pack(anchor="w", pady=(5, 0))
         tk.Label(bottom, text=core.CREDIT, bg=DARK, fg="#8D929B", font=("Segoe UI", 8),
                  wraplength=180, justify="left").pack(anchor="w", pady=(14, 0))
@@ -134,7 +136,7 @@ class App:
     def _nav(self, label, active=False, command=None):
         bg = "#292D34" if active else DARK
         fg = ACCENT if active else "#B6BBC4"
-        b = tk.Button(self.sidebar, text=("鈼?  " if active else "     ") + label,
+        b = tk.Button(self.sidebar, text=("> " if active else "  ") + label,
                       command=command or (lambda: None), anchor="w", relief="flat",
                       bg=bg, fg=fg, activebackground="#292D34", activeforeground="white",
                       font=("Segoe UI", 9, "bold"), padx=17, pady=13, cursor="hand2", bd=0)
@@ -164,7 +166,7 @@ class App:
                  font=("Segoe UI Semibold", 22)).pack(anchor="w")
         tk.Label(left, text="Inspect sessions, validate MCAP data, and prepare operational reports.",
                  bg=BG, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w", pady=(3, 0))
-        self.status_pill = tk.Label(header, text="鈼? READY", bg="#E7F3E9", fg=GREEN,
+        self.status_pill = tk.Label(header, text="READY", bg="#E7F3E9", fg=GREEN,
                                     font=("Segoe UI", 8, "bold"), padx=13, pady=8)
         self.status_pill.pack(side="right", pady=5)
 
@@ -188,16 +190,16 @@ class App:
         self.hand_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(controls, text="Hand check (slow)", variable=self.hand_var).pack(
             side="left", padx=(0, 12))
-        self.scan_btn = self._button(controls, "RUN SCAN  鈫?, self.scan, dark=True)
+        self.scan_btn = self._button(controls, "RUN SCAN", self.scan, dark=True)
         self.scan_btn.pack(side="left")
 
         metrics = tk.Frame(self.content, bg=BG)
         metrics.pack(fill="x", padx=24, pady=(0, 12))
         self.metric_vars = {}
-        metric_defs = [("SESSIONS", "sessions", "鈥?, "Total discovered"),
-                       ("QUALIFIED", "qualified", "鈥?, "OK + warning"),
-                       ("TOTAL STORAGE", "storage", "鈥?, "Combined file size"),
-                       ("RECORDING TIME", "duration", "鈥?, "Combined duration")]
+        metric_defs = [("SESSIONS", "sessions", "-", "Total discovered"),
+                       ("QUALIFIED", "qualified", "-", "OK + warning"),
+                       ("TOTAL STORAGE", "storage", "-", "Combined file size"),
+                       ("RECORDING TIME", "duration", "-", "Combined duration")]
         for title, key, value, hint in metric_defs:
             card = tk.Frame(metrics, bg=SURFACE, highlightbackground=LINE, highlightthickness=1)
             card.pack(side="left", fill="both", expand=True, padx=4)
@@ -313,7 +315,7 @@ class App:
         return entry
 
     def status(self, msg, state="working"):
-        self.status_pill.config(text="鈼? " + msg.upper(),
+        self.status_pill.config(text=msg.upper(),
                                 bg="#FFF3D9" if state == "working" else ("#FCE9E8" if state == "error" else "#E7F3E9"),
                                 fg=AMBER if state == "working" else (RED if state == "error" else GREEN))
 
@@ -366,7 +368,7 @@ class App:
             messagebox.showwarning("ZYWtool", str(e))
 
     def scan_done(self, sess, err):
-        self.scan_btn.config(state="normal", text="RUN SCAN  鈫?)
+        self.scan_btn.config(state="normal", text="RUN SCAN")
         if err:
             self.status("Scan failed", "error")
             messagebox.showerror("ZYWtool", f"Scan gagal:\n{err}")
@@ -614,10 +616,10 @@ class App:
             return
         try:
             self.jobs.start_process("preview", "Preview frames", target,
-                                    ([sys.executable, "--preview-frames", target, "--n", "16", "--cam", "0"]
+                                    ([sys.executable, "--preview-frames", target, "--n", "30", "--cam", "0"]
                                      if getattr(sys, "frozen", False) else
                                      [sys.executable, os.path.join(HERE, "preview_frames.py"), target,
-                                      "--n", "16", "--cam", "0"]),
+                                      "--n", "30", "--cam", "0"]),
                                     output=os.path.join(HERE, "preview"))
         except jobs.JobConflict as e:
             messagebox.showwarning("Preview frames", str(e))
@@ -668,4 +670,3 @@ if __name__ == "__main__":
         root = tk.Tk()
         App(root)
         root.mainloop()
-

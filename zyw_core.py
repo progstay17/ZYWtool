@@ -57,7 +57,7 @@ DEFAULT_CONFIG = {
 def load_config():
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
     if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, encoding="utf-8") as f:
+        with open(CONFIG_PATH, encoding="utf-8-sig") as f:
             cfg.update(json.load(f))
     return cfg
 
@@ -196,7 +196,7 @@ def _task_fields(task):
 def scan_session(path, full=False):
     s = Session(name=os.path.basename(path), path=path)
     try:
-        with open(os.path.join(path, "session.json"), encoding="utf-8") as f:
+        with open(os.path.join(path, "session.json"), encoding="utf-8-sig") as f:
             m = json.load(f)
     except Exception as e:
         m = {}

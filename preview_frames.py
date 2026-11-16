@@ -176,7 +176,13 @@ def _even_timeline_targets(start_ns, end_ns, n, blocked):
         mid = (lo + hi) / 2
         intervals = [(max(lo, a), min(hi, b)) for a, b in blocked if b >= lo and a <= hi]
         intervals.sort()
-        points = [lo] + [v for pair in intervals for v in pair] + [hi]
+        merged = []
+        for a, b in intervals:
+            if merged and a <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+            else:
+                merged.append((a, b))
+        points = [lo] + [v for pair in merged for v in pair] + [hi]
         candidates = {
             int(lo + width * frac) for frac in (0.10, 0.25, 0.50, 0.75, 0.90)
         }
@@ -264,7 +270,7 @@ def contact_sheet(frames, title):
     return sheet
 
 
-def preview_session(sess_dir, n=6, cams=(0,)):
+def preview_session(sess_dir, n=30, cams=(0,)):
     group = os.path.basename(os.path.dirname(sess_dir))
     name = os.path.basename(sess_dir)
     written = []

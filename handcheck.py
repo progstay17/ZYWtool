@@ -1,4 +1,4 @@
-﻿"""handcheck - cek tangan (MediaPipe Hand Landmarker) per sesi MCAP.
+"""handcheck - cek tangan (MediaPipe Hand Landmarker) per sesi MCAP.
 ZYWtool contributors
 
 Dipakai dua cara (hasilnya sama karena memakai fungsi check_sessions yang sama):
@@ -36,6 +36,8 @@ HERE = (os.environ.get("ZYWTOOL_HOME") or
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
+import zyw_core as core  # noqa: E402
+
 CREDIT = "ZYWtool contributors"
 DEFAULTS = {"frames": 20, "sample_every_s": 15, "min_frames": 20, "max_frames": 120,
             "max_error_pct": 30.0, "rule": "strict", "conf": 0.3, "tiles": True, "cam": 0,
@@ -46,7 +48,7 @@ MODEL = os.path.join(MODEL_DIR, "hand_landmarker.task")
 MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
              "hand_landmarker/float16/1/hand_landmarker.task")
 MODEL_SHA256 = "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1"
-OUT_DIR = os.path.join(HERE, "hand_check")
+OUT_DIR = core.load_config().get("hand_check_root") or os.path.join(HERE, "hand_check")
 REPORT_DIR = os.path.join(OUT_DIR, "reports")
 _DETECTORS = {}
 THUMB_W = 480            # frame penuh tidak disimpan; hanya thumbnail untuk gambar laporan

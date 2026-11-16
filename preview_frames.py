@@ -19,7 +19,7 @@ sys.path.insert(0, HERE)
 import zyw_core as core  # noqa: E402
 from zyw_core import find_session_dirs  # noqa: E402
 
-OUT_ROOT = os.path.join(HERE, "preview")
+OUT_ROOT = core.load_config().get("preview_root") or os.path.join(HERE, "preview")
 THUMB_W, THUMB_H, LABEL_H, COLS = 360, 203, 22, 4
 
 

@@ -1,4 +1,4 @@
-﻿"""ZYWtool core: scan sesi, cek kesehatan mcap, durasi, pembagian shift, Excel, dan salin per folder.
+"""ZYWtool core: scan sesi, cek kesehatan mcap, durasi, pembagian shift, Excel, dan salin per folder.
 ZYWtool contributors"""
 import sys
 import json
@@ -15,6 +15,7 @@ MAGIC = b"\x89MCAP0\r\n"
 HERE = (os.environ.get("ZYWTOOL_HOME") or
         (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
          else os.path.dirname(os.path.abspath(__file__))))
+APP_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "ZYWtool")
 CONFIG_PATH = (os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "ZYWtool", "zyw_config.json")
                 if getattr(sys, "frozen", False) else os.path.join(HERE, "zyw_config.json"))
 SHEET = "ZY White"
@@ -51,6 +52,8 @@ DEFAULT_CONFIG = {
     "data_root": "",
     "excel_path": r"C:\ZYW\ZYW_Rekap.xlsx",
     "organized_root": r"C:\ZYW_organized",
+    "preview_root": os.path.join(APP_DATA_DIR, "preview"),
+    "hand_check_root": os.path.join(APP_DATA_DIR, "hand_check"),
 }
 
 

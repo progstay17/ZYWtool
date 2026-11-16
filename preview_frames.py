@@ -196,6 +196,10 @@ def _even_timeline_targets(start_ns, end_ns, n, blocked):
             _distance_from_blocked(t, blocked),
             -abs(t - mid)
         ))
+        # Jangan paksa mengambil frame jika seluruh bin berimpit dengan sampel
+        # Hand Check. Lebih baik preview lebih sedikit daripada mengulang frame.
+        if blocked and _distance_from_blocked(best, blocked) <= 0:
+            continue
         chosen.append(int(best))
     return chosen
 
@@ -221,6 +225,7 @@ def sample_session(sess_dir, n, cam):
     total = sum(i[1] for i in infos)
     if total == 0 or n <= 0:
         return []
+    requested = min(int(n), total)
     session_start = min(i[2] for i in infos)
     session_end = max(i[3] for i in infos)
     if session_end <= session_start:
@@ -229,7 +234,7 @@ def sample_session(sess_dir, n, cam):
     # Gunakan konfigurasi Hand Check yang benar-benar aktif. Sampelnya tidak disentuh
     # dan tidak dihitung ulang; Preview hanya menjauhi timestamp tersebut.
     blocked = _handcheck_blocked_intervals(infos, cam)
-    targets = _even_timeline_targets(session_start, session_end, min(int(n), total), blocked)
+    targets = _even_timeline_targets(session_start, session_end, requested, blocked)
 
     results, seen = [], set()
     for slot, t_target in enumerate(targets, 1):
@@ -252,8 +257,8 @@ def sample_session(sess_dir, n, cam):
         percent = min(100.0, max(0.0, 100.0 * (log_time - session_start) / (session_end - session_start)))
         results.append((slot, elapsed, percent, img))
 
-    if len(results) < len(targets):
-        print(f"  catatan: {len(results)}/{len(targets)} titik berhasil didecode (sebagian berdekatan dengan batas/jeda file)", flush=True)
+    if len(results) < requested:
+        print(f"  catatan: {len(results)}/{requested} titik preview tersedia; titik yang bertabrakan dengan Hand Check atau gagal didecode dilewati", flush=True)
     return results
 
 def contact_sheet(frames, title):
@@ -281,7 +286,7 @@ def preview_session(sess_dir, n=30, cams=(0,)):
         out_dir = os.path.join(OUT_ROOT, group)
         os.makedirs(out_dir, exist_ok=True)
         out = os.path.join(out_dir, f"{name}_cam{cam}.png")
-        contact_sheet(frames, f"{group} | {name} | camera {cam}").save(out)
+        contact_sheet(frames, f"{group} | {name} | camera {cam} | timeline preview").save(out)
         written.append(out)
     return written
 

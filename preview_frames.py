@@ -15,6 +15,7 @@ HERE = (os.environ.get("ZYWTOOL_HOME") or
         (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
          else os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, HERE)
+import zyw_core as core  # noqa: E402
 from zyw_core import find_session_dirs  # noqa: E402
 
 OUT_ROOT = os.path.join(HERE, "preview")

@@ -1,5 +1,7 @@
 ﻿# ZYWtool
 
+**Version: 1.0.1**
+
 **Recording Operations Toolkit** - desktop utility for reviewing MCAP recording sessions, checking recording integrity, organizing session folders, and preparing operational Excel reports.
 
 > ZYWtool is designed for an internal recording-operations workflow. Review generated flags and reports before making operational decisions. The hand-check feature is probabilistic and supports manual review; it does not replace it.
@@ -14,7 +16,7 @@
 - **Folder tools** - organizes/copies session folders to a configured destination.
 - **Optional hand check** - uses MediaPipe Hand Landmarker to sample frames and flag sessions for manual review.
 - **HTML hand-check reports** - can produce per-session and group reports with supporting thumbnails.
-- **Session footage preview** - creates up to 30 evenly spaced timeline snapshots per session, independent of video FPS. Preview timestamps avoid Hand Check sample points on the same camera and show each frame's session percentage and timestamp.
+- **Session footage preview (v1.0.1)** - creates up to 30 evenly spaced timeline snapshots per session, independent of video FPS. If a candidate collides with a Hand Check sample or decodes to a duplicate frame, Preview tries alternate timestamps inside the same timeline slot until it finds a unique frame. Each tile shows its session percentage and timestamp.
 - **Background jobs** - manages long-running operations separately from the main GUI.
 - **Arrange undo utility** - undo_arrange.py provides a guarded workflow to inspect and reverse supported arrange operations.
 

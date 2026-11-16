@@ -48,8 +48,13 @@ MODEL = os.path.join(MODEL_DIR, "hand_landmarker.task")
 MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
              "hand_landmarker/float16/1/hand_landmarker.task")
 MODEL_SHA256 = "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1"
-OUT_DIR = core.load_config().get("hand_check_root") or os.path.join(HERE, "hand_check")
-REPORT_DIR = os.path.join(OUT_DIR, "reports")
+def report_root():
+    """Ambil lokasi output terbaru; Preferences bisa berubah tanpa restart GUI."""
+    cfg = core.load_config()
+    out = core.config_output_dir(cfg, "hand_check_root", os.path.join(HERE, "hand_check"))
+    return os.path.join(out, "reports")
+
+
 _DETECTORS = {}
 THUMB_W = 480            # frame penuh tidak disimpan; hanya thumbnail untuk gambar laporan
 
@@ -409,7 +414,7 @@ def report_dir_for(sess_dir, root):
             rel = os.path.join(os.path.basename(rt) or "root", sub)
     except ValueError:
         rel = os.path.join(os.path.basename(os.path.dirname(sd)), os.path.basename(sd))
-    return os.path.join(REPORT_DIR, *[_safe(p) for p in rel.split(os.sep) if p])
+    return os.path.join(report_root(), *[_safe(p) for p in rel.split(os.sep) if p])
 
 
 def _root_is_session(root):
@@ -471,7 +476,8 @@ def write_summary_tsv(entries, hc, root):
     """Ringkasan teks (tab-separated, bisa langsung di-paste ke Excel) untuk satu kali proses."""
     if _root_is_session(root):
         return ""
-    d = os.path.join(REPORT_DIR, _safe(os.path.basename(os.path.normpath(root)) or "root"))
+    report_dir = report_root()
+    d = os.path.join(report_dir, _safe(os.path.basename(os.path.normpath(root)) or "root"))
     os.makedirs(d, exist_ok=True)
     cols = ["Grup", "Sesi", "Recorder", "Mulai", "Frame sampel", "Tangan 0", "Tangan 1", "Tangan 2",
             "Tangan 3+", "Error strict (%)", "Error lenient (%)", "Rule", "Batas (%)", "Flag", "Laporan", "Catatan"]
@@ -481,7 +487,7 @@ def write_summary_tsv(entries, hc, root):
         h = e.get("hand") or {}
         ok = bool(h.get("frames"))
         c = h.get("counts", {})
-        rep = os.path.relpath(e["report"], REPORT_DIR) if e.get("report") else ""
+        rep = os.path.relpath(e["report"], report_root()) if e.get("report") else ""
         row = [e.get("group", ""), e["name"], e.get("recorder", ""), e.get("start", ""),
                h.get("frames", 0) if ok else 0, c.get("0", ""), c.get("1", ""), c.get("2", ""), c.get("3+", ""),
                comma(h["pct_strict"]) if ok else "", comma(h["pct_lenient"]) if ok else "",
@@ -500,7 +506,8 @@ def output_path(root, entries):
     """Path yang cocok untuk dibuka setelah selesai: laporan sesi (kalau root = satu sesi) atau folder laporan root."""
     if _root_is_session(root):
         return entries[0].get("report", "") if entries else ""
-    d = os.path.join(REPORT_DIR, _safe(os.path.basename(os.path.normpath(root)) or "root"))
+    report_dir = report_root()
+    d = os.path.join(report_dir, _safe(os.path.basename(os.path.normpath(root)) or "root"))
     return d if os.path.isdir(d) else ""
 
 

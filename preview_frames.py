@@ -19,7 +19,10 @@ sys.path.insert(0, HERE)
 import zyw_core as core  # noqa: E402
 from zyw_core import find_session_dirs  # noqa: E402
 
-OUT_ROOT = core.load_config().get("preview_root") or os.path.join(HERE, "preview")
+def output_root():
+    """Ambil lokasi output terbaru dari Preferences."""
+    cfg = core.load_config()
+    return core.config_output_dir(cfg, "preview_root", os.path.join(HERE, "preview"))
 THUMB_W, THUMB_H, LABEL_H, COLS = 360, 203, 22, 4
 
 
@@ -304,7 +307,7 @@ def preview_session(sess_dir, n=30, cams=(0,)):
         frames = sample_session(sess_dir, n, cam)
         if not frames:
             continue
-        out_dir = os.path.join(OUT_ROOT, group)
+        out_dir = os.path.join(output_root(), group)
         os.makedirs(out_dir, exist_ok=True)
         out = os.path.join(out_dir, f"{name}_cam{cam}.png")
         contact_sheet(frames, f"{group} | {name} | camera {cam} | timeline preview").save(out)

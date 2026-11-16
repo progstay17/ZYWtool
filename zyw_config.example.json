@@ -1,4 +1,4 @@
-﻿{
+{
   "shifts": [
     [
       "07:00",
@@ -59,6 +59,10 @@
     "use_cache": false
   },
   "excel_path": "",
+  "excel_root": "",
+  "excel_filename": "ZYW_Rekap.xlsx",
+  "preview_root": "",
+  "hand_check_root": "",
   "organized_root": "",
   "data_root": ""
 }

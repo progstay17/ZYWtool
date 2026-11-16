@@ -14,6 +14,7 @@
 - **Folder tools** - organizes/copies session folders to a configured destination.
 - **Optional hand check** - uses MediaPipe Hand Landmarker to sample frames and flag sessions for manual review.
 - **HTML hand-check reports** - can produce per-session and group reports with supporting thumbnails.
+- **Session footage preview** - creates up to 30 evenly spaced timeline snapshots per session, independent of video FPS. Preview timestamps avoid Hand Check sample points on the same camera and show each frame's session percentage and timestamp.
 - **Background jobs** - manages long-running operations separately from the main GUI.
 - **Arrange undo utility** - undo_arrange.py provides a guarded workflow to inspect and reverse supported arrange operations.
 
@@ -34,7 +35,7 @@ Run the application: python zywtool.py
 
 Optional command-line tools:
 - python handcheck.py "D:\recordings"
-- python preview_frames.py "D:\recordings" --n 16 --cam 0
+- python preview_frames.py "D:\recordings" --n 30 --cam 0
 - python undo_arrange.py --help
 
 ## Install the Windows portable release
@@ -95,7 +96,7 @@ Core modules:
 | zyw_core.py | MCAP scanning, session logic, configuration, Excel and folder operations |
 | handcheck.py | MediaPipe-based optional hand check and HTML reporting |
 | handreport.py | Hand-check report generation |
-| preview_frames.py | Frame preview extraction |
+| preview_frames.py | Time-based footage preview, offset from Hand Check sample points |
 | jobs.py | Background job management |
 | undo_arrange.py | Guarded arrange undo utility |
 

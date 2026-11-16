@@ -1,8 +1,9 @@
 ﻿"""Undo folder arrangement using a ZYWtool logs/arrange_*.json file.
 ZYWtool contributors
 
-Usage: python undo_arrange.py <arrange-log.json> --root <recording-root>
+Usage: python undo_arrange.py <arrange-log.json> --root <original-recording-root>
 The command validates every move and asks for confirmation before changing folders.
+The arranged destination may be outside the original recording root.
 """
 import argparse
 import datetime as dt
@@ -22,7 +23,7 @@ def _inside(root, path):
 
 
 def prepare_undo(log_path, root):
-    """Validate an arrange log completely; return reverse moves without changing files."""
+    """Validate an arrange log; --root membatasi asal rekaman, tujuan boleh di luar root."""
     root = os.path.realpath(os.path.abspath(root))
     if not os.path.isdir(root):
         raise ValueError(f"Folder root tidak ditemukan: {root}")
@@ -40,8 +41,10 @@ def prepare_undo(log_path, root):
         name = os.path.basename(original)
         if not name.startswith("session_") or os.path.basename(arranged) != name:
             raise ValueError(f"Entri log #{i} bukan perpindahan folder sesi yang valid.")
-        if not _inside(root, original) or not _inside(root, arranged):
-            raise ValueError(f"Entri log #{i} berada di luar --root; tidak aman untuk di-undo.")
+        # --root membatasi folder asal rekaman. Tujuan arrange boleh berada
+        # di direktori output terpisah sesuai Preferences.
+        if not _inside(root, original):
+            raise ValueError(f"Entri log #{i}: folder asal berada di luar --root.")
         if os.path.islink(arranged) or os.path.islink(os.path.dirname(arranged)):
             raise ValueError(f"Entri log #{i} melewati symbolic link; dibatalkan.")
         if arranged in seen_src or original in seen_dst:
@@ -61,12 +64,15 @@ def execute_undo(moves, root):
     completed = []
     try:
         for source, destination in moves:
-            if not _inside(root, source) or not _inside(root, destination):
-                raise ValueError("Path berubah di luar --root setelah validasi.")
+            # Source adalah lokasi hasil arrange dan boleh berada di luar --root.
+            # Destination wajib kembali ke root rekaman yang sudah divalidasi.
+            if not _inside(root, destination):
+                raise ValueError("Path tujuan berubah ke luar --root setelah validasi.")
             if not os.path.isdir(source) or os.path.lexists(destination):
                 raise FileExistsError(f"Kondisi folder berubah; tidak dipindahkan: {source} -> {destination}")
             os.makedirs(os.path.dirname(destination), exist_ok=True)
-            os.rename(source, destination)
+            import shutil
+            shutil.move(source, destination)
             completed.append({"from": source, "to": destination})
     finally:
         if completed:

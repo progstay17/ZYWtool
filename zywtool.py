@@ -18,7 +18,7 @@ import zyw_core as core  # noqa: E402
 import handcheck  # noqa: E402
 import jobs  # noqa: E402
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 
 BG = "#F3F4F6"
 SURFACE = "#FFFFFF"
@@ -460,9 +460,13 @@ class App:
             return
         root = self.path_var.get().strip()
         plan = core.arrange(self.view, self.cfg, root, apply=False)
+        destination = core.config_output_dir(self.cfg, "organized_root", root)
         groups = sorted({os.path.basename(os.path.dirname(d)) for _, d in plan})
         sample = "\n".join(groups[:8])
-        messagebox.showinfo("Preview folder plan", f"{len(plan)} sesi akan dipindah ke {len(groups)} folder grup di:\n{root}\n\nContoh folder grup:\n{sample}")
+        messagebox.showinfo("Preview folder plan",
+            f"Sumber: {root}\nTujuan: {destination}\n\n"
+            f"{len(plan)} sesi akan dipindah ke {len(groups)} folder grup.\n\n"
+            f"Contoh folder grup:\n{sample}")
 
     def apply_org(self):
         if not self.view:
@@ -473,7 +477,10 @@ class App:
         if block:
             messagebox.showwarning("ZYWtool", block)
             return
-        if not messagebox.askyesno("Konfirmasi pemindahan", "Pindahkan sesi ke folder grup di dalam:\n" + root + "\n\nNama folder session tidak berubah. Pemindahan dicatat di folder logs untuk undo."):
+        destination = core.config_output_dir(self.cfg, "organized_root", root)
+        if not messagebox.askyesno("Konfirmasi pemindahan",
+                "Sumber rekaman:\n" + root + "\n\nTujuan folder terorganisasi:\n" + destination +
+                "\n\nNama folder session tidak berubah. Pemindahan dicatat di folder logs untuk undo."):
             return
         self.status("Arranging folders")
         self.root.update_idletasks()
@@ -484,8 +491,14 @@ class App:
             messagebox.showerror("ZYWtool", str(e))
             return
         self.status("Folder arrangement complete", "ready")
+        if plan:
+            # After moving sessions to a separate output folder, keep the explorer
+            # pointed at the new location instead of refreshing the now-empty source.
+            self.path_var.set(destination)
+            self.cfg["data_root"] = destination
+            core.save_config(self.cfg)
         self.refresh()
-        messagebox.showinfo("ZYWtool", f"Selesai. {len(plan)} sesi diproses.")
+        messagebox.showinfo("ZYWtool", f"Selesai. {len(plan)} sesi dipindahkan ke:\n{destination}")
 
     def stats_folder(self):
         folder = filedialog.askdirectory(initialdir="I:/")
@@ -639,9 +652,9 @@ class App:
         fields = tk.Frame(card, bg=SURFACE)
         fields.pack(fill="x", padx=14, pady=12)
         vars_ = {}
-        def path_row(label, key, picker):
+        def path_row(label, key, hint):
             row = tk.Frame(fields, bg=SURFACE)
-            row.pack(fill="x", pady=6)
+            row.pack(fill="x", pady=(6, 0))
             tk.Label(row, text=label, bg=SURFACE, fg=INK,
                      font=("Segoe UI", 9, "bold"), width=19, anchor="w").pack(side="left")
             var = tk.StringVar(value=str(self.cfg.get(key) or ""))
@@ -649,25 +662,26 @@ class App:
             ttk.Entry(row, textvariable=var).pack(side="left", fill="x", expand=True, padx=(0, 8))
             def browse():
                 current = var.get().strip()
-                if picker == "file":
-                    chosen = filedialog.askopenfilename(
-                        parent=win, title="Pilih workbook Excel",
-                        initialdir=os.path.dirname(current) if current else os.path.expanduser("~"),
-                        filetypes=[("Excel workbook", "*.xlsx *.xlsm *.xls"), ("All files", "*.*")])
-                else:
-                    chosen = filedialog.askdirectory(
-                        parent=win, title=f"Pilih folder {label}",
-                        initialdir=current if os.path.isdir(current) else os.path.expanduser("~"),
-                        mustexist=False)
+                chosen = filedialog.askdirectory(
+                    parent=win, title=f"Pilih folder {label}",
+                    initialdir=current if os.path.isdir(current) else os.path.expanduser("~"),
+                    mustexist=True)
                 if chosen:
-                    var.set(chosen)
+                    var.set(os.path.abspath(chosen))
             self._button(row, "BROWSE", browse, dark=False).pack(side="right")
+            tk.Label(fields, text=hint, bg=SURFACE, fg=MUTED,
+                     font=("Segoe UI", 8)).pack(anchor="w", padx=(154, 0), pady=(1, 2))
         tk.Label(fields, text="FILE & OUTPUT LOCATIONS", bg=SURFACE, fg=MUTED,
                  font=("Segoe UI", 8, "bold")).pack(anchor="w", pady=(0, 5))
-        path_row("Excel workbook", "excel_path", "file")
-        path_row("Preview output", "preview_root", "folder")
-        path_row("Hand Check output", "hand_check_root", "folder")
-        path_row("Organized folders", "organized_root", "folder")
+        excel_name = os.path.basename(str(self.cfg.get("excel_filename") or "ZYW_Rekap.xlsx"))
+        path_row("Excel output folder", "excel_root",
+                 f"Workbook {excel_name} dibuat otomatis di folder ini saat Export to Excel.")
+        path_row("Preview output", "preview_root",
+                 "Gambar preview disimpan di subfolder grup di dalam folder ini.")
+        path_row("Hand Check output", "hand_check_root",
+                 "Laporan disimpan di subfolder reports di dalam folder ini.")
+        path_row("Organized folders", "organized_root",
+                 "Folder sesi dipindahkan ke subfolder grup di dalam folder ini.")
         card2 = tk.Frame(win, bg=SURFACE, highlightbackground=LINE, highlightthickness=1)
         card2.pack(fill="both", expand=True, padx=18, pady=(0, 12))
         tk.Label(card2, text="ADVANCED SETTINGS (JSON)", bg=SURFACE, fg=MUTED,
@@ -680,18 +694,23 @@ class App:
         def save():
             try:
                 advanced = json.loads(txt.get("1.0", "end"))
+                # Advanced JSON only contains operational settings; apply it first so
+                # the four explicit folder pickers always win if pasted JSON has path keys.
+                self.cfg.update(advanced)
                 for key, var in vars_.items():
                     value = var.get().strip()
-                    if key == "excel_path" and value and not os.path.isfile(value):
-                        raise ValueError(f"File Excel tidak ditemukan: {value}")
-                    if key != "excel_path" and value:
-                        os.makedirs(value, exist_ok=True)
-                    self.cfg[key] = value
-                self.cfg.update(advanced)
+                    if not value or not os.path.isdir(value):
+                        raise ValueError(f"Pilih folder yang valid untuk {key}.")
+                    self.cfg[key] = os.path.abspath(os.path.expandvars(os.path.expanduser(value)))
+                excel_path = os.path.join(self.cfg["excel_root"], excel_name)
+                self.cfg["excel_path"] = excel_path  # legacy compatibility for older builds
                 core.save_config(self.cfg)
                 messagebox.showinfo("Preferences",
-                    "Path workbook dan folder output berhasil disimpan. Scan ulang jika pengaturan shift berubah.",
-                    parent=win)
+                    "Folder Preferences berhasil disimpan.\n\n"
+                    f"Workbook otomatis: {excel_path}\n"
+                    f"Preview: {self.cfg['preview_root']}\n"
+                    f"Hand Check: {self.cfg['hand_check_root']}\reports\n"
+                    f"Organized: {self.cfg['organized_root']}", parent=win)
                 win.destroy()
             except Exception as e:
                 messagebox.showerror("Preferences", f"Pengaturan tidak valid:\n{e}", parent=win)

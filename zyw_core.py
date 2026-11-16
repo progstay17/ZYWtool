@@ -50,8 +50,11 @@ DEFAULT_CONFIG = {
                    "max_error_pct": 30, "rule": "strict", "conf": 0.3, "tiles": True, "cam": 0,
                    "report": True, "use_cache": False},
     "data_root": "",
-    "excel_path": r"C:\ZYW\ZYW_Rekap.xlsx",
-    "organized_root": r"C:\ZYW_organized",
+    # excel_root adalah folder tujuan; nama workbook dibuat otomatis.
+    "excel_path": r"C:\ZYW\ZYW_Rekap.xlsx",  # kompatibilitas konfigurasi lama
+    "excel_root": r"C:\ZYW",
+    "excel_filename": "ZYW_Rekap.xlsx",
+    "organized_root": os.path.join(APP_DATA_DIR, "organized"),
     "preview_root": os.path.join(APP_DATA_DIR, "preview"),
     "hand_check_root": os.path.join(APP_DATA_DIR, "hand_check"),
 }
@@ -59,10 +62,42 @@ DEFAULT_CONFIG = {
 
 def load_config():
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
+    loaded = {}
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, encoding="utf-8-sig") as f:
-            cfg.update(json.load(f))
+            loaded = json.load(f)
+            cfg.update(loaded)
+    # Migrasi konfigurasi lama: excel_path dahulu menunjuk file, sekarang UI
+    # memilih folder. Pertahankan nama workbook lama agar file existing tetap dipakai.
+    if "excel_root" not in loaded or not cfg.get("excel_root"):
+        legacy = str(cfg.get("excel_path") or "")
+        if legacy and os.path.isdir(legacy):
+            cfg["excel_root"] = legacy
+        else:
+            cfg["excel_root"] = os.path.dirname(legacy) or os.path.join(os.path.expanduser("~"), "Documents")
+    if "excel_filename" not in loaded or not cfg.get("excel_filename"):
+        legacy = str(cfg.get("excel_path") or "")
+        name = os.path.basename(legacy)
+        cfg["excel_filename"] = name if name.lower().endswith((".xlsx", ".xlsm")) else "ZYW_Rekap.xlsx"
+    # Jangan biarkan Organized folders kosong lalu diam-diam memakai folder sumber.
+    if not str(cfg.get("organized_root") or "").strip():
+        cfg["organized_root"] = os.path.join(APP_DATA_DIR, "organized")
+    # Canonical absolute paths prevent GUI/worker processes resolving the same
+    # preference against different working directories.
+    for key, fallback in (
+        ("excel_root", os.path.join(os.path.expanduser("~"), "Documents")),
+        ("preview_root", os.path.join(APP_DATA_DIR, "preview")),
+        ("hand_check_root", os.path.join(APP_DATA_DIR, "hand_check")),
+        ("organized_root", os.path.join(APP_DATA_DIR, "organized")),
+    ):
+        cfg[key] = config_output_dir(cfg, key, fallback)
     return cfg
+
+
+def config_output_dir(cfg, key, fallback):
+    """Resolve a configured output folder consistently for GUI and worker processes."""
+    raw = str((cfg or {}).get(key) or fallback or HERE).strip()
+    return os.path.abspath(os.path.expandvars(os.path.expanduser(raw)))
 
 
 def save_config(cfg):
@@ -447,19 +482,20 @@ def resolve_session_path(s, root=None):
 
 
 def arrange(sessions, cfg, root, apply=False):
-    """Susun sesi ke folder grup di dalam root (direktori asli).
-    Folder session_xxx TIDAK di-rename, hanya dipindah. Sesi CORRUPT ke root/_REJECTED, sesi WARN tetap di grupnya.
-    Setelah dipindah, s.path ikut diperbarui. Log pemindahan selalu ditulis (juga kalau berhenti di tengah)."""
+    """Susun sesi ke folder grup di organized_root (atau root jika belum diatur).
+    Folder sesi tidak di-rename. Sesi CORRUPT masuk _REJECTED.
+    Log menyimpan path asal dan tujuan untuk mendukung undo lintas direktori."""
+    destination_root = config_output_dir(cfg, "organized_root", root)
     plan = []
     names = name_map(sessions, cfg)
     for s in sessions:
         if not s.start or s.name not in names:
             continue
         if s.health == "CORRUPT":
-            dest_dir = os.path.join(root, "_REJECTED")
+            dest_dir = os.path.join(destination_root, "_REJECTED")
         else:
-            dest_dir = os.path.join(root, names[s.name])
-        if os.path.normpath(os.path.dirname(s.path)) == os.path.normpath(dest_dir):
+            dest_dir = os.path.join(destination_root, names[s.name])
+        if os.path.normcase(os.path.normpath(os.path.dirname(s.path))) == os.path.normcase(os.path.normpath(dest_dir)):
             continue
         plan.append((s.path, os.path.join(dest_dir, s.name)))
     if apply and plan:
@@ -474,7 +510,8 @@ def arrange(sessions, cfg, root, apply=False):
                 if os.path.exists(dst_dir) or not os.path.isdir(src_dir):
                     continue
                 os.makedirs(os.path.dirname(dst_dir), exist_ok=True)
-                os.rename(src_dir, dst_dir)
+                # shutil.move mendukung tujuan di drive/volume berbeda.
+                shutil.move(src_dir, dst_dir)
                 moved.append({"from": src_dir, "to": dst_dir})
                 s = by_path.get(os.path.normpath(src_dir))
                 if s is not None:
@@ -532,8 +569,15 @@ def export_excel(sessions, cfg):
     from openpyxl import Workbook, load_workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-    path = cfg["excel_path"]
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Workbook dibuat otomatis di folder pilihan. Jangan meminta pengguna
+    # memilih file; jika workbook sudah ada, pertahankan isi/status sebelumnya.
+    output_root = config_output_dir(
+        cfg, "excel_root", os.path.dirname(cfg.get("excel_path", "")) or HERE)
+    filename = os.path.basename(str(cfg.get("excel_filename") or "ZYW_Rekap.xlsx"))
+    if not filename.lower().endswith((".xlsx", ".xlsm")):
+        filename = "ZYW_Rekap.xlsx"
+    path = os.path.join(output_root, filename)
+    os.makedirs(output_root, exist_ok=True)
     if os.path.exists(path):
         wb = load_workbook(path)
         ws = wb[SHEET] if SHEET in wb.sheetnames else wb.create_sheet(SHEET, 0)

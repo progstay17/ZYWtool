@@ -1,6 +1,6 @@
 # ZYWtool
 
-**Version: 1.0.2**
+**Version: 1.0.3**
 
 **Recording Operations Toolkit** - desktop utility for reviewing MCAP recording sessions, checking recording integrity, organizing session folders, and preparing operational Excel reports.
 

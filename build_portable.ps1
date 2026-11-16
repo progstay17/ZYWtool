@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 $Build = Join-Path $Root "build\pyinstaller"
@@ -12,7 +12,7 @@ Copy-Item -Recurse -Force "$Build\main\ZYWtool\*" $Release
 Copy-Item -Force "$Root\zyw_config.example.json" "$Release\"
 Copy-Item -Force "$Root\requirements.txt" "$Release\"
 Copy-Item -Force "$Root\install.ps1", "$Root\uninstall.ps1", "$Root\README.md", "$Root\LICENSE", "$Root\MODEL.md", "$Root\THIRD_PARTY_NOTICES.md" $ReleaseRoot
-Set-Content -Path (Join-Path $ReleaseRoot "VERSION.txt") -Value "1.0.1" -Encoding ascii
+Set-Content -Path (Join-Path $ReleaseRoot "VERSION.txt") -Value "1.0.2" -Encoding ascii
 $Archive = Join-Path $ReleaseRoot "ZYWtool-Windows-Portable.zip"
 Compress-Archive -Path (Join-Path $ReleaseRoot "install.ps1"), (Join-Path $ReleaseRoot "uninstall.ps1"), (Join-Path $ReleaseRoot "README.md"), (Join-Path $ReleaseRoot "LICENSE"), (Join-Path $ReleaseRoot "MODEL.md"), (Join-Path $ReleaseRoot "THIRD_PARTY_NOTICES.md"), (Join-Path $ReleaseRoot "VERSION.txt"), $Release -DestinationPath $Archive -CompressionLevel Optimal
 if ($LASTEXITCODE -ne 0) { throw "Portable ZIP creation failed with exit code $LASTEXITCODE" }

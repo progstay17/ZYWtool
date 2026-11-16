@@ -1,6 +1,6 @@
-﻿# ZYWtool
+# ZYWtool
 
-**Version: 1.0.1**
+**Version: 1.0.2**
 
 **Recording Operations Toolkit** - desktop utility for reviewing MCAP recording sessions, checking recording integrity, organizing session folders, and preparing operational Excel reports.
 
@@ -64,6 +64,8 @@ zyw_config.example.json is a sanitized template. Set the following values in the
 - data_root - source directory containing recording sessions.
 - excel_path - path to the operational Excel workbook.
 - organized_root - destination for organized/copied session folders.
+- preview_root - destination for generated Preview contact sheets.
+- hand_check_root - destination for Hand Check HTML reports and thumbnails. These paths can be selected with Browse in Preferences.
 - shifts - configured shift start/end times, display labels, and shift identifiers.
 - activities - canonical activity labels and aliases.
 - hand_check - optional MediaPipe sampling and reporting settings.

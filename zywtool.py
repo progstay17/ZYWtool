@@ -1,4 +1,4 @@
-﻿"""ZYWtool - Recording operations dashboard. UI refresh; processing stays in zyw_core.
+"""ZYWtool - Recording operations dashboard. UI refresh; processing stays in zyw_core.
 ZYWtool contributors"""
 import json
 import os
@@ -18,7 +18,7 @@ import zyw_core as core  # noqa: E402
 import handcheck  # noqa: E402
 import jobs  # noqa: E402
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 BG = "#F3F4F6"
 SURFACE = "#FFFFFF"
@@ -604,7 +604,7 @@ class App:
             self.jobs.start_process("handcheck", "Hand check", target,
                                     ([sys.executable, "--handcheck", target] if getattr(sys, "frozen", False)
                                      else [sys.executable, os.path.join(HERE, "handcheck.py"), target]),
-                                    output=os.path.join(HERE, "hand_check", "reports"))
+                                    output=os.path.join(self.cfg.get("hand_check_root") or os.path.join(HERE, "hand_check"), "reports"))
         except jobs.JobConflict as e:
             messagebox.showwarning("Hand check", str(e))
             return
@@ -620,7 +620,7 @@ class App:
                                      if getattr(sys, "frozen", False) else
                                      [sys.executable, os.path.join(HERE, "preview_frames.py"), target,
                                       "--n", "30", "--cam", "0"]),
-                                    output=os.path.join(HERE, "preview"))
+                                    output=self.cfg.get("preview_root") or os.path.join(HERE, "preview"))
         except jobs.JobConflict as e:
             messagebox.showwarning("Preview frames", str(e))
             return
@@ -629,27 +629,73 @@ class App:
     def open_settings(self):
         win = tk.Toplevel(self.root)
         win.title("Preferences")
-        win.geometry("720x500")
+        win.geometry("820x650")
+        win.minsize(700, 560)
         win.configure(bg=BG)
         tk.Label(win, text="WORKSPACE PREFERENCES", bg=BG, fg=INK,
                  font=("Segoe UI Semibold", 17)).pack(anchor="w", padx=18, pady=(16, 8))
         card = tk.Frame(win, bg=SURFACE, highlightbackground=LINE, highlightthickness=1)
-        card.pack(fill="both", expand=True, padx=18, pady=(0, 12))
-        txt = tk.Text(card, wrap="none", relief="flat", font=("Consolas", 10), padx=12, pady=12)
-        txt.pack(fill="both", expand=True, padx=8, pady=8)
-        keys = ["shifts", "qc", "supervisor", "excel_path", "organized_root", "hand_check"]
+        card.pack(fill="x", padx=18, pady=(0, 12))
+        fields = tk.Frame(card, bg=SURFACE)
+        fields.pack(fill="x", padx=14, pady=12)
+        vars_ = {}
+        def path_row(label, key, picker):
+            row = tk.Frame(fields, bg=SURFACE)
+            row.pack(fill="x", pady=6)
+            tk.Label(row, text=label, bg=SURFACE, fg=INK,
+                     font=("Segoe UI", 9, "bold"), width=19, anchor="w").pack(side="left")
+            var = tk.StringVar(value=str(self.cfg.get(key) or ""))
+            vars_[key] = var
+            ttk.Entry(row, textvariable=var).pack(side="left", fill="x", expand=True, padx=(0, 8))
+            def browse():
+                current = var.get().strip()
+                if picker == "file":
+                    chosen = filedialog.askopenfilename(
+                        parent=win, title="Pilih workbook Excel",
+                        initialdir=os.path.dirname(current) if current else os.path.expanduser("~"),
+                        filetypes=[("Excel workbook", "*.xlsx *.xlsm *.xls"), ("All files", "*.*")])
+                else:
+                    chosen = filedialog.askdirectory(
+                        parent=win, title=f"Pilih folder {label}",
+                        initialdir=current if os.path.isdir(current) else os.path.expanduser("~"),
+                        mustexist=False)
+                if chosen:
+                    var.set(chosen)
+            self._button(row, "BROWSE", browse, dark=False).pack(side="right")
+        tk.Label(fields, text="FILE & OUTPUT LOCATIONS", bg=SURFACE, fg=MUTED,
+                 font=("Segoe UI", 8, "bold")).pack(anchor="w", pady=(0, 5))
+        path_row("Excel workbook", "excel_path", "file")
+        path_row("Preview output", "preview_root", "folder")
+        path_row("Hand Check output", "hand_check_root", "folder")
+        path_row("Organized folders", "organized_root", "folder")
+        card2 = tk.Frame(win, bg=SURFACE, highlightbackground=LINE, highlightthickness=1)
+        card2.pack(fill="both", expand=True, padx=18, pady=(0, 12))
+        tk.Label(card2, text="ADVANCED SETTINGS (JSON)", bg=SURFACE, fg=MUTED,
+                 font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=14, pady=(10, 2))
+        txt = tk.Text(card2, wrap="none", relief="flat", font=("Consolas", 9), padx=12, pady=10,
+                      height=12)
+        txt.pack(fill="both", expand=True, padx=8, pady=(2, 8))
+        keys = ["shifts", "qc", "supervisor", "hand_check"]
         txt.insert("1.0", json.dumps({k: self.cfg[k] for k in keys}, indent=2, ensure_ascii=False))
         def save():
             try:
-                new = json.loads(txt.get("1.0", "end"))
-                self.cfg.update(new)
+                advanced = json.loads(txt.get("1.0", "end"))
+                for key, var in vars_.items():
+                    value = var.get().strip()
+                    if key == "excel_path" and value and not os.path.isfile(value):
+                        raise ValueError(f"File Excel tidak ditemukan: {value}")
+                    if key != "excel_path" and value:
+                        os.makedirs(value, exist_ok=True)
+                    self.cfg[key] = value
+                self.cfg.update(advanced)
                 core.save_config(self.cfg)
-                messagebox.showinfo("Preferences", "Pengaturan disimpan. Scan ulang agar shift baru diterapkan.", parent=win)
+                messagebox.showinfo("Preferences",
+                    "Path workbook dan folder output berhasil disimpan. Scan ulang jika pengaturan shift berubah.",
+                    parent=win)
                 win.destroy()
             except Exception as e:
-                messagebox.showerror("Preferences", f"JSON tidak valid:\n{e}", parent=win)
+                messagebox.showerror("Preferences", f"Pengaturan tidak valid:\n{e}", parent=win)
         self._button(win, "SAVE PREFERENCES", save, dark=True).pack(anchor="e", padx=18, pady=(0, 16))
-
 
 if __name__ == "__main__":
     if getattr(sys, "frozen", False) and len(sys.argv) > 1:

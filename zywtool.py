@@ -18,7 +18,7 @@ import zyw_core as core  # noqa: E402
 import handcheck  # noqa: E402
 import jobs  # noqa: E402
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 
 BG = "#F3F4F6"
 SURFACE = "#FFFFFF"
@@ -293,6 +293,7 @@ class App:
         self._button(actions, "Export to Excel", self.export, dark=True).pack(fill="x", pady=3)
         self._button(actions, "Preview folder plan", self.preview_org, dark=False).pack(fill="x", pady=3)
         self._button(actions, "Arrange folders", self.apply_org, dark=False).pack(fill="x", pady=3)
+        self._button(actions, "Undo Arrange", self.undo_org, dark=False).pack(fill="x", pady=3)
         self._button(actions, "Folder statistics", self.stats_folder, dark=False).pack(fill="x", pady=3)
         self._button(actions, "Preview frames", self.preview_frames, dark=False).pack(fill="x", pady=3)
         self._button(actions, "Hand check", self.hand_check_run, dark=False).pack(fill="x", pady=3)
@@ -377,8 +378,18 @@ class App:
         self.by_name = {s.name: s for s in sess}
         labels = ["(semua)"] + [x[2] for x in self.cfg["shifts"]] + ["DI LUAR SHIFT"]
         self.shift_box["values"] = labels
-        self.status("Scan complete", "ready")
+        failed = [s for s in sess if s.health == "CORRUPT"]
+        no_start = [s for s in sess if s.start is None]
+        self.status("Scan complete" if not failed and not no_start else "Scan complete - review audit",
+                    "ready" if not failed and not no_start else "error")
         self.refresh()
+        if failed or no_start:
+            messagebox.showwarning(
+                "Scan perlu ditinjau",
+                f"Ditemukan {len(sess)} sesi.\n"
+                f"CORRUPT: {len(failed)}\nTanpa waktu mulai: {len(no_start)}\n\n"
+                "Periksa detail sesi dan sheet 'Scan Audit' setelah export. "
+                "Sesi bermasalah tidak boleh dianggap sebagai hasil scan lengkap.")
 
     def reset_filters(self):
         for v in (self.sess_from, self.sess_to, self.time_from, self.time_to):
@@ -499,6 +510,37 @@ class App:
             core.save_config(self.cfg)
         self.refresh()
         messagebox.showinfo("ZYWtool", f"Selesai. {len(plan)} sesi dipindahkan ke:\n{destination}")
+
+    def undo_org(self):
+        if self.jobs.running():
+            messagebox.showwarning("ZYWtool", "Tunggu semua proses selesai sebelum Undo Arrange.")
+            return
+        if not messagebox.askyesno(
+                "Konfirmasi Undo Arrange",
+                "Pulihkan pemindahan dari riwayat Arrange terbaru?\n"
+                "Undo akan berhenti jika ada path sumber yang sudah terisi atau file hasil Arrange hilang."):
+            return
+        try:
+            count, log_path = core.undo_arrange()
+        except Exception as e:
+            messagebox.showerror("Undo Arrange gagal", str(e))
+            return
+        self.status("Undo Arrange complete", "ready")
+        messagebox.showinfo("Undo Arrange", f"{count} folder session dipulihkan.\nRiwayat: {log_path}")
+        # Restore the source root where possible so the user can immediately rescan.
+        try:
+            import json
+            with open(log_path, encoding="utf-8") as f:
+                moves = json.load(f)
+            roots = [os.path.dirname(m["from"]) for m in moves]
+            source_root = os.path.commonpath(roots) if roots else ""
+            if source_root and os.path.isdir(source_root):
+                self.path_var.set(source_root)
+                self.cfg["data_root"] = source_root
+                core.save_config(self.cfg)
+        except (OSError, ValueError, KeyError):
+            pass
+        self.scan()
 
     def stats_folder(self):
         folder = filedialog.askdirectory(initialdir="I:/")

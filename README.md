@@ -1,132 +1,42 @@
 # ZYWtool
 
-**Version: 1.0.3**
+**Version: 1.0.4**
 
-**Recording Operations Toolkit** - desktop utility for reviewing MCAP recording sessions, checking recording integrity, organizing session folders, and preparing operational Excel reports.
-
-> ZYWtool is designed for an internal recording-operations workflow. Review generated flags and reports before making operational decisions. The hand-check feature is probabilistic and supports manual review; it does not replace it.
+Recording Operations Toolkit for reviewing MCAP recording sessions, checking recording integrity, organizing session folders, and preparing operational Excel reports.
 
 ## Features
 
-- **MCAP session scanning** - discovers session folders and reads MCAP metadata.
-- **Complete folder-size accounting** - session size includes every file and nested folder (including hidden files), while MCAP validation and duration remain limited to `.mcap` files. Folder Statistics reports each group's session files and the selected root's complete storage size.
-- **Recording health checks** - checks MCAP file validity and reports session duration and statistics.
-- **Session explorer** - presents discovered sessions in a desktop dashboard.
-- **Shift and activity mapping** - maps sessions to configured time shifts and activity labels.
-- **Excel reporting** - exports the operational recap workbook, including the ZY White and Cek File worksheets.
-- **Folder tools** - organizes/copies session folders to a configured destination.
-- **Optional hand check** - uses MediaPipe Hand Landmarker to sample frames and flag sessions for manual review.
-- **HTML hand-check reports** - can produce per-session and group reports with supporting thumbnails.
-- **Session footage preview (v1.0.1)** - creates up to 30 evenly spaced timeline snapshots per session, independent of video FPS. If a candidate collides with a Hand Check sample or decodes to a duplicate frame, Preview tries alternate timestamps inside the same timeline slot until it finds a unique frame. Each tile shows its session percentage and timestamp.
-- **Background jobs** - manages long-running operations separately from the main GUI.
-- **Arrange undo utility** - undo_arrange.py provides a guarded workflow to inspect and reverse supported arrange operations.
+- Deep discovery of session_* folders at arbitrary nesting depth; sessions with MCAP files remain visible even when session.json is missing or invalid.
+- Recursive MCAP discovery within each session folder.
+- Excel Scan Audit worksheet with per-session metadata, MCAP counts, parse counts, duration, storage, errors and warnings.
+- Complete recursive folder-size accounting.
+- Recording health checks, session explorer, shift/activity mapping and Excel recap.
+- Arrange folders and Undo Arrange directly from the GUI. Undo validates paths and refuses unsafe overwrites.
+- Optional MediaPipe Hand Check and HTML reports; up to 30 timeline snapshots in Preview.
+- Background job management.
 
-## Requirements
+## Windows portable release
 
-### Packaged Windows application
-
-Use the Windows portable release supplied with this project. It bundles Python runtime dependencies. The MediaPipe Hand Landmarker model is downloaded automatically and checksum-verified the first time Hand Check is used. Extract the release ZIP before running the installer.
-
-### Run from source
-
-- Windows 10/11 (the GUI uses Tkinter; other platforms may require additional setup).
-- Python version compatible with the pinned dependencies in requirements.txt.
-
-Install dependencies: python -m pip install -r requirements.txt
-
-Run the application: python zywtool.py
-
-Optional command-line tools:
-- python handcheck.py "D:\recordings"
-- python preview_frames.py "D:\recordings" --n 30 --cam 0
-- python undo_arrange.py --help
-
-## Install the Windows portable release
+The portable ZIP bundles the Python runtime and pinned Python application dependencies. No separate Python installation or pip install is required on the target PC.
 
 1. Extract ZYWtool-Windows-Portable.zip.
 2. Keep install.ps1 and the ZYWtool folder together.
-3. Open PowerShell in the extracted directory.
-4. Run: powershell -ExecutionPolicy Bypass -File .\install.ps1
-5. Launch ZYWtool from the Desktop shortcut.
-6. Open Preferences and configure the source folder, workbook path, and organized output folder before processing data.
+3. Run PowerShell and execute: powershell -ExecutionPolicy Bypass -File .\\install.ps1
+4. Installer checks Microsoft Visual C++ Redistributable x64 and installs it automatically if missing (winget or Microsoft-signed official installer).
+5. Launch from the Desktop shortcut and configure paths in Preferences.
 
-The installer copies application files only. It does not bundle operational workbooks, recordings, reference datasets, reports, the MediaPipe model, or user-specific configuration. The model is downloaded on first Hand Check use and cached under %LOCALAPPDATA%\ZYWtool\models. An internet connection is required for that first download.
+The MediaPipe Hand Landmarker model is downloaded automatically and SHA-256 verified on first Hand Check use. Internet is required for that first download.
 
-## Configuration and data locations
+## Run from source
 
-When running from source, zyw_config.json is read from the project directory.
-
-In the packaged Windows build, user configuration is stored separately at:
-
-    %APPDATA%\ZYWtool\zyw_config.json
-
-zyw_config.example.json is a sanitized template. Set the following values in the app's Preferences:
-
-- data_root - source directory containing recording sessions.
-- excel_path - path to the operational Excel workbook.
-- organized_root - destination for organized/copied session folders.
-- preview_root - destination for generated Preview contact sheets.
-- hand_check_root - destination for Hand Check HTML reports and thumbnails. These paths can be selected with Browse in Preferences.
-- shifts - configured shift start/end times, display labels, and shift identifiers.
-- activities - canonical activity labels and aliases.
-- hand_check - optional MediaPipe sampling and reporting settings.
-
-Do not commit a real zyw_config.json, operational workbook, or private filesystem paths to a public repository.
-
-## Hand-check modes
-
-The optional hand-check feature supports two rules:
-
-- **Strict** - a sampled frame is treated as an error when the detected hand count is not exactly two, or a detected hand point lies outside the frame.
-- **Lenient** - a sampled frame is treated as an error when no hands or more than two hands are detected, or a detected hand point lies outside the frame.
-
-A session is flagged when its sampled-frame error percentage exceeds the configured threshold. Detection depends on frame sampling and model confidence; inspect the generated report and source footage before drawing conclusions.
+Windows 10/11; Python 3.12 recommended. Install with python -m pip install -r requirements.txt, then run python zywtool.py.
 
 ## Data safety
 
-- Keep the original operational workbook and source recordings outside the application installation directory.
-- Back up the workbook and source data before bulk operations.
-- Review source and destination paths before organizing folders.
-- Treat delete, overwrite, and undo operations as potentially destructive; inspect the plan and confirmation prompts.
-- Generated previews, logs, caches, reports, and test fixtures may contain private operational information. Keep them out of public source control.
-- The uninstall script removes the installed application and its Desktop shortcut. It intentionally preserves %APPDATA%\ZYWtool and external workbook/data folders.
+Keep operational workbooks and source recordings outside the application directory. Back up source data before bulk operations. Do not commit real configuration, workbooks, recordings, logs, reports, model caches or private paths. Sessions missing valid start metadata remain visible in Scan Audit but cannot safely populate date-dependent actual rows.
 
-## Development and tests
+## Development
 
-Core modules:
+Run python -m pytest tests -q. Tests use temporary directories and synthetic files only. Build with .\\build_portable.ps1; the script provisions an isolated Python 3.12 environment, installs pinned dependencies, builds the Windows one-folder executable and packages release\\ZYWtool-Windows-Portable.zip. GitHub Actions runs compilation, tests and lint on the new recorder-discovery tests.
 
-| File | Responsibility |
-|---|---|
-| zywtool.py | Tkinter desktop application (version 1.0.3) |
-| zyw_core.py | MCAP scanning, session logic, configuration, Excel and folder operations |
-| handcheck.py | MediaPipe-based optional hand check and HTML reporting |
-| handreport.py | Hand-check report generation |
-| preview_frames.py | Time-based footage preview, offset from Hand Check sample points |
-| jobs.py | Background job management |
-| undo_arrange.py | Guarded arrange undo utility |
-
-Run the regression suite with `python -m pytest tests -q`. The tests use temporary directories and synthetic files; they do not access production recordings or the original operational workbook.
-
-Compile-check Python modules:
-python -m compileall -q handcheck.py handreport.py jobs.py preview_frames.py zywtool.py zyw_core.py undo_arrange.py
-
-Build the portable Windows application on Windows:
-.\build_portable.ps1
-
-The build script creates `release\ZYWtool-Windows-Portable.zip` and a `VERSION.txt` file. The archive contains the `ZYWtool` application folder, installer/uninstaller scripts, README, license, model notice, and third-party notices.
-
-## Known limitations
-
-- MediaPipe hand detection is probabilistic and may produce false positives or false negatives.
-- The hand-check report is a review aid, not an automatic acceptance/rejection decision.
-- Processing time depends on video codec, resolution, session length, hardware, and sampling settings.
-- Shift labels and operational workbook conventions are workflow-specific; confirm them with the process owner before changing them.
-- The portable executable should be tested on a clean Windows machine before broad deployment.
-
-## Privacy
-
-This application may process recording metadata, recorder identifiers, operational workbook data, file paths, logs, and report thumbnails. Do not publish real operational datasets, screenshots, reports, logs, model caches, credentials, or personal information. Use synthetic fixtures for demonstrations and public issue reports.
-
-## License
-
-The ZYWtool source code is licensed under the MIT License (see LICENSE). The separately downloaded MediaPipe model is a third-party asset under Apache License 2.0; see MODEL.md and THIRD_PARTY_NOTICES.md.
+Source code is MIT licensed. The MediaPipe model is a third-party asset under Apache License 2.0; see MODEL.md and THIRD_PARTY_NOTICES.md.

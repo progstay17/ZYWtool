@@ -253,12 +253,15 @@ def folder_size_bytes(path):
 
 def scan_session(path, full=False):
     s = Session(name=os.path.basename(path), path=path)
+    meta_path = os.path.join(path, "session.json")
     try:
-        with open(os.path.join(path, "session.json"), encoding="utf-8-sig") as f:
+        with open(meta_path, encoding="utf-8-sig") as f:
             m = json.load(f)
+        if not isinstance(m, dict):
+            raise ValueError("metadata bukan object JSON")
     except Exception as e:
         m = {}
-        s.errors.append(f"session.json rusak: {e}")
+        s.errors.append(f"session.json tidak tersedia/valid: {type(e).__name__}: {e}")
     s.device_id = m.get("device_id", "")
     s.task = m.get("task", "")
     s.location = m.get("location", "")
@@ -266,34 +269,48 @@ def scan_session(path, full=False):
     s.stop_cause = m.get("stop_cause", "")
     s.client_unix_us = m.get("client_unix_us")
     s.device_no, s.activity = _task_fields(s.task)
-    if "start_time_unix" in m:
-        s.start = dt.datetime.fromtimestamp(m["start_time_unix"], WIB)
-    else:
-        s.errors.append("start_time_unix tidak ada")
+    try:
+        if m.get("start_time_unix") is not None:
+            s.start = dt.datetime.fromtimestamp(float(m["start_time_unix"]), WIB)
+        else:
+            s.errors.append("start_time_unix tidak ada")
+    except (TypeError, ValueError, OSError, OverflowError) as e:
+        s.errors.append(f"start_time_unix tidak valid: {e}")
     if not s.location:
         s.warnings.append("location kosong")
 
-    mcaps = sorted(x for x in os.listdir(path) if x.lower().endswith(".mcap"))
+    # Recorder exports may nest MCAP files below session subdirectories.
+    mcaps = []
+    for dirpath, dirnames, filenames in os.walk(path):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        mcaps.extend(os.path.join(dirpath, fn) for fn in filenames if fn.lower().endswith(".mcap"))
+    mcaps.sort(key=str.casefold)
     if not mcaps:
-        s.errors.append("tanpa file mcap")
-    for fn in mcaps:
-        mf = check_mcap(os.path.join(path, fn), full=full)
-        s.files.append(mf)
-        if mf.ok:
-            s.duration_s += mf.duration_s
-        else:
-            s.errors.append(f"{fn}: {mf.error}")
-    # Ukuran sesi mencakup semua file dan subfolder, bukan hanya file MCAP.
+        s.errors.append("tanpa file mcap (termasuk subfolder)")
+    for file_path in mcaps:
+        fn = os.path.relpath(file_path, path)
+        try:
+            mf = check_mcap(file_path, full=full)
+            s.files.append(mf)
+            if mf.ok:
+                s.duration_s += mf.duration_s
+            else:
+                s.errors.append(f"{fn}: {mf.error}")
+        except Exception as e:
+            s.errors.append(f"{fn}: {type(e).__name__}: {e}")
     s.size = folder_size_bytes(path)
     if mcaps and len(mcaps) <= 1:
         s.warnings.append("hanya 1 file mcap (sesi pendek / mungkin tidak lengkap)")
     if not s.stop_cause:
         s.warnings.append("stop_cause kosong")
-    if s.client_unix_us and s.start and abs(s.start.timestamp() - s.client_unix_us / 1e6) > 60:
-        s.warnings.append("start_time beda >60 dtk dari client_unix_us")
-    # session.json ditulis saat sesi selesai: waktu tulis harus sama dengan mulai + durasi
+    if s.client_unix_us and s.start:
+        try:
+            if abs(s.start.timestamp() - float(s.client_unix_us) / 1e6) > 60:
+                s.warnings.append("start_time beda >60 dtk dari client_unix_us")
+        except (TypeError, ValueError, OSError):
+            s.warnings.append("client_unix_us tidak valid")
     try:
-        written = os.path.getmtime(os.path.join(path, "session.json"))
+        written = os.path.getmtime(meta_path)
         if s.start:
             gap = written - (s.start.timestamp() + s.duration_s)
             if abs(gap) > 60:
@@ -306,19 +323,21 @@ def scan_session(path, full=False):
 
 
 def find_session_dirs(root):
-    """Cari folder sesi (session_* yang punya session.json) sampai 2 level di bawah root.
-    Mendukung struktur baru root/<folder grup>/session_xxx. Folder yang diawali titik diabaikan."""
+    """Temukan folder session_* pada kedalaman berapa pun, tanpa mensyaratkan session.json.
+    Folder sesi dikenali dari nama session_* dan keberadaan metadata atau MCAP di dalamnya.
+    Sesi tanpa metadata tetap dilaporkan agar tidak hilang diam-diam.
+    """
     found = []
+    root = os.path.abspath(root)
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-        rel = os.path.relpath(dirpath, root)
-        depth = 0 if rel == "." else rel.count(os.sep) + 1
-        if os.path.basename(dirpath).startswith("session_") and "session.json" in filenames:
-            found.append(dirpath)
-            dirnames[:] = []
-        elif depth >= 2:
-            dirnames[:] = []
-    return sorted(found)
+        dirnames[:] = sorted((d for d in dirnames if not d.startswith(".")), key=str.casefold)
+        if os.path.basename(dirpath).lower().startswith("session_"):
+            has_mcap = any(fn.lower().endswith(".mcap") for _, _, files in os.walk(dirpath)
+                           for fn in files)
+            if "session.json" in filenames or has_mcap:
+                found.append(dirpath)
+                dirnames[:] = []
+    return sorted(set(found), key=str.casefold)
 
 
 def scan_all(root, full=False, progress=None, hand_check=False, hand_cfg=None, should_stop=None):
@@ -547,6 +566,30 @@ def arrange(sessions, cfg, root, apply=False):
     return plan
 
 
+def undo_arrange(log_dir=None):
+    """Undo the newest arrange log using the same guarded validator as the CLI."""
+    import undo_arrange as undo_tool
+    log_dir = log_dir or os.path.join(HERE, "logs")
+    logs = sorted((os.path.join(log_dir, n) for n in os.listdir(log_dir)
+                   if n.startswith("arrange_") and n.endswith(".json")),
+                  key=os.path.getmtime, reverse=True) if os.path.isdir(log_dir) else []
+    for log_path in logs:
+        with open(log_path, encoding="utf-8") as f:
+            records = json.load(f)
+        if not isinstance(records, list) or not records:
+            continue
+        original_dirs = [os.path.abspath(m["from"]) for m in records if isinstance(m, dict) and m.get("from")]
+        if not original_dirs:
+            continue
+        root = os.path.commonpath([os.path.dirname(p) for p in original_dirs])
+        moves = undo_tool.prepare_undo(log_path, root)
+        completed = undo_tool.execute_undo(moves, root)
+        receipt_log = log_path[:-5] + ".undone.json"
+        os.replace(log_path, receipt_log)
+        return len(completed), receipt_log
+    raise RuntimeError("Tidak ada riwayat Arrange yang bisa di-undo.")
+
+
 def _key_of_row(vals):
     d = vals[1].date() if isinstance(vals[1], dt.datetime) else vals[1]
     return (vals[0], d, vals[2], vals[6], vals[7], vals[5])
@@ -687,6 +730,26 @@ def export_excel(sessions, cfg):
     # 4) sheet cek file: sesi tidak sehat ditandai di sini
     _write_check_sheet(wb, sorted(sessions, key=lambda s: s.start or dt.datetime.min.replace(tzinfo=WIB)),
                        name_map(sessions, cfg))
+    # Audit worksheet makes skipped/incomplete sessions visible instead of silently omitting them.
+    audit_name = "Scan Audit"
+    if audit_name in wb.sheetnames:
+        del wb[audit_name]
+    audit = wb.create_sheet(audit_name)
+    audit.append(["Session", "Path", "Recorder", "Device", "Start (WIB)", "MCAP files",
+                  "Parsed MCAP", "Duration (s)", "Size (bytes)", "Health", "Errors", "Warnings"])
+    for session in sessions:
+        audit.append([
+            session.name, session.path, session.capturer, session.device_no or session.device_id,
+            session.start.strftime("%Y-%m-%d %H:%M:%S") if session.start else "",
+            len(session.files), sum(1 for f in session.files if getattr(f, "ok", False)),
+            round(session.duration_s, 3), session.size, session.health,
+            " | ".join(session.errors), " | ".join(session.warnings)])
+    audit.freeze_panes = "A2"
+    audit.auto_filter.ref = audit.dimensions
+    for col, width in {"A":24,"B":65,"C":24,"D":16,"E":22,"F":12,"G":14,
+                       "H":16,"I":18,"J":14,"K":60,"L":60}.items():
+        audit.column_dimensions[col].width = width
+
     wb.properties.creator = CREDIT
     tmp_path = path + ".tmp"
     try:

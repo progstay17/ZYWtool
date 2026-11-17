@@ -45,3 +45,6 @@ dist/
 release/
 *.spec
 *.log
+
+# Isolated build environment
+.venv-build/

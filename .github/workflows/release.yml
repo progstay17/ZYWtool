@@ -1,0 +1,55 @@
+name: Windows Portable Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - name: Build Windows portable package
+        shell: pwsh
+        run: .\build_portable.ps1
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @'
+          ## ZYWtool v1.0.5
+
+          ### What's new
+          - First-run setup guides users through Excel, Preview, Hand Check and Organized output folders.
+          - Fresh installs no longer use hidden default output paths.
+          - New destination folders are created automatically and checked for write access.
+          - Fixed portable first-run configuration saving when the APPDATA folder does not yet exist.
+          - GUI attribution updated to **Fadhil Ghifarion 法迪 for AIT**.
+          - Portable use is now straightforward: extract the ZIP and run `ZYWtool\ZYWtool.exe`.
+
+          ### Portable installation
+          - Python runtime and pinned application dependencies are bundled.
+          - PowerShell installation is optional; double-click `Install ZYWtool.bat` only if you want a Start/Desktop shortcut and a per-user installation.
+          - The installer checks the Microsoft Visual C++ Redistributable x64 prerequisite.
+
+          ### Validation
+          - GitHub Actions CI passed.
+          - Regression suite: 20 tests passed.
+          - Python compile check and Preferences lint passed.
+          - First-run GUI smoke test passed.
+          - Portable ZIP CRC/integrity check passed.
+          '@
+          gh release create "$env:GITHUB_REF_NAME" ".\release\ZYWtool-Windows-Portable.zip" --title "ZYWtool v1.0.5 - Windows Portable" --notes $notes

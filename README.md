@@ -97,7 +97,7 @@ Core modules:
 
 | File | Responsibility |
 |---|---|
-| zywtool.py | Tkinter desktop application (version 1.0.1) |
+| zywtool.py | Tkinter desktop application (version 1.0.3) |
 | zyw_core.py | MCAP scanning, session logic, configuration, Excel and folder operations |
 | handcheck.py | MediaPipe-based optional hand check and HTML reporting |
 | handreport.py | Hand-check report generation |
@@ -105,7 +105,7 @@ Core modules:
 | jobs.py | Background job management |
 | undo_arrange.py | Guarded arrange undo utility |
 
-Automated test runners are maintained separately from this public source snapshot. Do not run internal test scripts against production data or the original workbook.
+Run the regression suite with `python -m pytest tests -q`. The tests use temporary directories and synthetic files; they do not access production recordings or the original operational workbook.
 
 Compile-check Python modules:
 python -m compileall -q handcheck.py handreport.py jobs.py preview_frames.py zywtool.py zyw_core.py undo_arrange.py

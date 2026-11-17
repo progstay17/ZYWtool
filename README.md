@@ -9,6 +9,7 @@
 ## Features
 
 - **MCAP session scanning** - discovers session folders and reads MCAP metadata.
+- **Complete folder-size accounting** - session size includes every file and nested folder (including hidden files), while MCAP validation and duration remain limited to `.mcap` files. Folder Statistics reports each group's session files and the selected root's complete storage size.
 - **Recording health checks** - checks MCAP file validity and reports session duration and statistics.
 - **Session explorer** - presents discovered sessions in a desktop dashboard.
 - **Shift and activity mapping** - maps sessions to configured time shifts and activity labels.

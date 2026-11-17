@@ -1,4 +1,4 @@
-﻿"""Undo folder arrangement using a ZYWtool logs/arrange_*.json file.
+"""Undo folder arrangement using a ZYWtool logs/arrange_*.json file.
 ZYWtool contributors
 
 Usage: python undo_arrange.py <arrange-log.json> --root <original-recording-root>
@@ -16,9 +16,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def _inside(root, path):
+    # Windows temp paths may mix 8.3 aliases (RUNNER~1) and long names.
+    # Canonicalize both sides before checking containment.
     try:
+        root = os.path.normcase(os.path.realpath(os.path.abspath(root)))
+        path = os.path.normcase(os.path.realpath(os.path.abspath(path)))
         return os.path.commonpath((root, path)) == root
-    except ValueError:
+    except (OSError, ValueError):
         return False
 
 

@@ -22,7 +22,10 @@ from zyw_core import find_session_dirs  # noqa: E402
 def output_root():
     """Ambil lokasi output terbaru dari Preferences."""
     cfg = core.load_config()
-    return core.config_output_dir(cfg, "preview_root", os.path.join(HERE, "preview"))
+    output = core.config_output_dir(cfg, "preview_root")
+    if not output:
+        raise ValueError("Lokasi Preview output belum diatur. Buka Preferences terlebih dahulu.")
+    return output
 THUMB_W, THUMB_H, LABEL_H, COLS = 360, 203, 22, 4
 
 

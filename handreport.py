@@ -1,5 +1,5 @@
 ﻿"""handreport - pembuat laporan HTML hasil hand check (satu file mandiri, bisa dikirim apa adanya).
-ZYWtool contributors
+Fadhil Ghifarion 法迪 for AIT
 
 build_report(entries, meta, out_path, mode, title)
   mode="session": satu sesi, lengkap (vonis, garis waktu, frame bermasalah, galeri gambar)

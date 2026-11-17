@@ -1,5 +1,5 @@
 """handcheck - cek tangan (MediaPipe Hand Landmarker) per sesi MCAP.
-ZYWtool contributors
+Fadhil Ghifarion 法迪 for AIT
 
 Dipakai dua cara (hasilnya sama karena memakai fungsi check_sessions yang sama):
   1. Mode independen : python handcheck.py <folder root atau folder sesi> [opsi]
@@ -38,7 +38,7 @@ if HERE not in sys.path:
 
 import zyw_core as core  # noqa: E402
 
-CREDIT = "ZYWtool contributors"
+CREDIT = "Fadhil Ghifarion 法迪 for AIT"
 DEFAULTS = {"frames": 20, "sample_every_s": 15, "min_frames": 20, "max_frames": 120,
             "max_error_pct": 30.0, "rule": "strict", "conf": 0.3, "tiles": True, "cam": 0,
             "report": True, "use_cache": False}
@@ -51,7 +51,9 @@ MODEL_SHA256 = "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1
 def report_root():
     """Ambil lokasi output terbaru; Preferences bisa berubah tanpa restart GUI."""
     cfg = core.load_config()
-    out = core.config_output_dir(cfg, "hand_check_root", os.path.join(HERE, "hand_check"))
+    out = core.config_output_dir(cfg, "hand_check_root")
+    if not out:
+        raise ValueError("Lokasi Hand Check output belum diatur. Buka Preferences terlebih dahulu.")
     return os.path.join(out, "reports")
 
 

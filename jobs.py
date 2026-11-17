@@ -1,5 +1,5 @@
 ﻿"""jobs - manajer proses latar belakang ZYWtool: indikator status, tombol stop, pencegah proses dobel.
-ZYWtool contributors
+Fadhil Ghifarion 法迪 for AIT
 
 Aturan anti-dobel:
   - scan: hanya satu scan berjalan pada satu waktu

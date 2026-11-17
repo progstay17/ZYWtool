@@ -1,5 +1,5 @@
 """Undo folder arrangement using a ZYWtool logs/arrange_*.json file.
-ZYWtool contributors
+Fadhil Ghifarion 法迪 for AIT
 
 Usage: python undo_arrange.py <arrange-log.json> --root <original-recording-root>
 The command validates every move and asks for confirmation before changing folders.
@@ -11,7 +11,7 @@ import json
 import os
 import sys
 
-CREDIT = "ZYWtool contributors"
+CREDIT = "Fadhil Ghifarion 法迪 for AIT"
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 

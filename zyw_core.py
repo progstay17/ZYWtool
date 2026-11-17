@@ -231,6 +231,26 @@ def _task_fields(task):
     return device_no, canonical_activity(" ".join(t.split()))
 
 
+def folder_size_bytes(path):
+    """Jumlahkan ukuran semua file di folder secara rekursif, termasuk file tersembunyi.
+
+    Symlink tidak diikuti agar target di luar folder atau file yang sama tidak terhitung
+    dua kali. File/folder yang tidak dapat diakses dilewati.
+    """
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(path, followlinks=False):
+        dirnames[:] = [name for name in dirnames
+                       if not os.path.islink(os.path.join(dirpath, name))]
+        for name in filenames:
+            file_path = os.path.join(dirpath, name)
+            try:
+                if not os.path.islink(file_path):
+                    total += os.path.getsize(file_path)
+            except OSError:
+                continue
+    return total
+
+
 def scan_session(path, full=False):
     s = Session(name=os.path.basename(path), path=path)
     try:
@@ -259,11 +279,12 @@ def scan_session(path, full=False):
     for fn in mcaps:
         mf = check_mcap(os.path.join(path, fn), full=full)
         s.files.append(mf)
-        s.size += mf.size
         if mf.ok:
             s.duration_s += mf.duration_s
         else:
             s.errors.append(f"{fn}: {mf.error}")
+    # Ukuran sesi mencakup semua file dan subfolder, bukan hanya file MCAP.
+    s.size = folder_size_bytes(path)
     if mcaps and len(mcaps) <= 1:
         s.warnings.append("hanya 1 file mcap (sesi pendek / mungkin tidak lengkap)")
     if not s.stop_cause:
@@ -718,8 +739,10 @@ def save_report(sessions, tag="scan"):
 
 
 def folder_stats(folder, full=False, progress=None):
-    """Hitung total sesi, size, dan durasi di dalam sebuah folder (rekursif, sampai 2 level).
-    Mengembalikan (total, per_grup). Grup = nama folder induk tiap sesi."""
+    """Hitung sesi, ukuran seluruh isi folder, dan durasi.
+    Size per grup menjumlahkan semua file di dalam sesi grup; total size mencakup
+    seluruh file di root yang dipilih, termasuk file di luar folder sesi.
+    """
     sessions = scan_all(folder, full=full, progress=progress)
     groups = {}
     for s in sessions:
@@ -737,6 +760,8 @@ def folder_stats(folder, full=False, progress=None):
     for row in groups.values():
         for k in total:
             total[k] += row[k]
+    # Total Storage merepresentasikan seluruh folder sumber, bukan hanya sesi MCAP.
+    total["size"] = folder_size_bytes(folder)
     return total, dict(sorted(groups.items()))
 
 

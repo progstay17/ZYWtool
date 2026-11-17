@@ -1,6 +1,6 @@
 # ZYWtool
 
-**Version: 1.0.4**
+**Version: 1.0.5**
 
 Recording Operations Toolkit for reviewing MCAP recording sessions, checking recording integrity, organizing session folders, and preparing operational Excel reports.
 
@@ -20,10 +20,9 @@ Recording Operations Toolkit for reviewing MCAP recording sessions, checking rec
 The portable ZIP bundles the Python runtime and pinned Python application dependencies. No separate Python installation or pip install is required on the target PC.
 
 1. Extract ZYWtool-Windows-Portable.zip.
-2. Keep install.ps1 and the ZYWtool folder together.
-3. Run PowerShell and execute: powershell -ExecutionPolicy Bypass -File .\\install.ps1
-4. Installer checks Microsoft Visual C++ Redistributable x64 and installs it automatically if missing (winget or Microsoft-signed official installer).
-5. Launch from the Desktop shortcut and configure paths in Preferences.
+2. **To use it immediately:** open the ZYWtool folder and double-click ZYWtool.exe. No PowerShell command or Python installation is needed.
+3. On first launch, Initial Setup asks where Excel, Preview, Hand Check and Organized output folders should be stored. Choose existing folders or type new folder paths; ZYWtool creates missing output folders and checks write access.
+4. **Optional installation:** double-click Install ZYWtool.bat. It copies the app into your user Programs folder, creates a Desktop shortcut and checks/installs Microsoft Visual C++ Redistributable x64 if required. The batch window stays open and displays any error.
 
 The MediaPipe Hand Landmarker model is downloaded automatically and SHA-256 verified on first Hand Check use. Internet is required for that first download.
 

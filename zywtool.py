@@ -1,5 +1,5 @@
 """ZYWtool - Recording operations dashboard. UI refresh; processing stays in zyw_core.
-ZYWtool contributors"""
+Fadhil Ghifarion 法迪 for AIT"""
 import json
 import os
 import sys
@@ -18,7 +18,7 @@ import zyw_core as core  # noqa: E402
 import handcheck  # noqa: E402
 import jobs  # noqa: E402
 
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 
 BG = "#F3F4F6"
 SURFACE = "#FFFFFF"
@@ -54,6 +54,12 @@ class App:
         self.root.bind("<Control-r>", lambda _e: self.scan())
         self.root.bind("<Control-f>", lambda _e: self.sess_from_entry.focus_set())
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.root.after(350, self._ensure_first_setup)
+
+    def _ensure_first_setup(self):
+        required = ("excel_root", "preview_root", "hand_check_root", "organized_root")
+        if not all(os.path.isdir(str(self.cfg.get(k) or "")) for k in required):
+            self.open_settings(first_run=True)
 
     def _setup_style(self):
         style = ttk.Style()
@@ -470,8 +476,12 @@ class App:
             messagebox.showinfo("ZYWtool", "Belum ada sesi. Scan dulu.")
             return
         root = self.path_var.get().strip()
+        destination = core.config_output_dir(self.cfg, "organized_root")
+        if not destination:
+            messagebox.showwarning("Organized folders", "Atur folder tujuan di Preferences terlebih dahulu.")
+            self.open_settings()
+            return
         plan = core.arrange(self.view, self.cfg, root, apply=False)
-        destination = core.config_output_dir(self.cfg, "organized_root", root)
         groups = sorted({os.path.basename(os.path.dirname(d)) for _, d in plan})
         sample = "\n".join(groups[:8])
         messagebox.showinfo("Preview folder plan",
@@ -488,7 +498,11 @@ class App:
         if block:
             messagebox.showwarning("ZYWtool", block)
             return
-        destination = core.config_output_dir(self.cfg, "organized_root", root)
+        destination = core.config_output_dir(self.cfg, "organized_root")
+        if not destination:
+            messagebox.showwarning("Organized folders", "Atur folder tujuan di Preferences terlebih dahulu.")
+            self.open_settings()
+            return
         if not messagebox.askyesno("Konfirmasi pemindahan",
                 "Sumber rekaman:\n" + root + "\n\nTujuan folder terorganisasi:\n" + destination +
                 "\n\nNama folder session tidak berubah. Pemindahan dicatat di folder logs untuk undo."):
@@ -652,6 +666,10 @@ class App:
     def hand_check_run(self):
         """Fitur independen: cek tangan pada sesi yang dipilih di tabel, atau seluruh folder Data Source.
         Hasil: laporan HTML di hand_check/reports (buka lewat panel Background Jobs)."""
+        if not self.cfg.get("hand_check_root"):
+            messagebox.showwarning("Hand Check", "Atur folder Hand Check output di Preferences terlebih dahulu.")
+            self.open_settings()
+            return
         target = self._resolve_target(self._selected_session(), self.path_var.get().strip())
         if not target:
             return
@@ -666,6 +684,10 @@ class App:
         self.status("Hand check running")
 
     def preview_frames(self):
+        if not self.cfg.get("preview_root"):
+            messagebox.showwarning("Preview", "Atur folder Preview output di Preferences terlebih dahulu.")
+            self.open_settings()
+            return
         target = self._resolve_target(self._selected_session(), self.path_var.get().strip())
         if not target:
             return
@@ -681,13 +703,13 @@ class App:
             return
         self.status("Preview frames running")
 
-    def open_settings(self):
+    def open_settings(self, first_run=False):
         win = tk.Toplevel(self.root)
-        win.title("Preferences")
+        win.title("Initial Setup" if first_run else "Preferences")
         win.geometry("820x650")
         win.minsize(700, 560)
         win.configure(bg=BG)
-        tk.Label(win, text="WORKSPACE PREFERENCES", bg=BG, fg=INK,
+        tk.Label(win, text="FIRST-TIME SETUP" if first_run else "WORKSPACE PREFERENCES", bg=BG, fg=INK,
                  font=("Segoe UI Semibold", 17)).pack(anchor="w", padx=18, pady=(16, 8))
         card = tk.Frame(win, bg=SURFACE, highlightbackground=LINE, highlightthickness=1)
         card.pack(fill="x", padx=18, pady=(0, 12))
@@ -739,16 +761,14 @@ class App:
                 # Advanced JSON only contains operational settings; apply it first so
                 # the four explicit folder pickers always win if pasted JSON has path keys.
                 self.cfg.update(advanced)
+                # Folder tujuan boleh belum ada. Buat otomatis dan uji izin tulis.
                 for key, var in vars_.items():
-                    value = var.get().strip()
-                    if not value or not os.path.isdir(value):
-                        raise ValueError(f"Pilih folder yang valid untuk {key}.")
-                    self.cfg[key] = os.path.abspath(os.path.expandvars(os.path.expanduser(value)))
+                    self.cfg[key] = core.prepare_output_dir(var.get())
                 excel_path = os.path.join(self.cfg["excel_root"], excel_name)
                 self.cfg["excel_path"] = excel_path  # legacy compatibility for older builds
                 core.save_config(self.cfg)
-                messagebox.showinfo("Preferences",
-                    "Folder Preferences berhasil disimpan.\n\n"
+                messagebox.showinfo("Initial Setup" if first_run else "Preferences",
+                    "Setup awal berhasil disimpan. ZYWtool siap digunakan.\n\n" if first_run else "Folder Preferences berhasil disimpan.\n\n"
                     f"Workbook otomatis: {excel_path}\n"
                     f"Preview: {self.cfg['preview_root']}\n"
                     f"Hand Check: {self.cfg['hand_check_root']}\reports\n"

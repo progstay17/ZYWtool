@@ -1,10 +1,11 @@
 """ZYWtool core: scan sesi, cek kesehatan mcap, durasi, pembagian shift, Excel, dan salin per folder.
-ZYWtool contributors"""
+Fadhil Ghifarion 法迪 for AIT"""
 import sys
 import json
 import os
 import re
 import shutil
+import tempfile
 import datetime as dt
 from dataclasses import dataclass, field
 
@@ -21,7 +22,7 @@ CONFIG_PATH = (os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), 
 SHEET = "ZY White"
 CHECK_SHEET = "Cek File"
 UNSHIFTED = "DI LUAR SHIFT"
-CREDIT = "ZYWtool contributors"
+CREDIT = "Fadhil Ghifarion 法迪 for AIT"
 STATUS_LABELS = ["OSS Not Yet", "Galaxea Not Yet", "HDD Not Yet"]
 
 HEADERS = ["Device No.", "Date", "Activity", "Status", "QC", "Recorder Name", "Location", "Shift",
@@ -51,12 +52,12 @@ DEFAULT_CONFIG = {
                    "report": True, "use_cache": False},
     "data_root": "",
     # excel_root adalah folder tujuan; nama workbook dibuat otomatis.
-    "excel_path": r"C:\ZYW\ZYW_Rekap.xlsx",  # kompatibilitas konfigurasi lama
-    "excel_root": r"C:\ZYW",
+    "excel_path": "",  # kompatibilitas konfigurasi lama
+    "excel_root": "",
     "excel_filename": "ZYW_Rekap.xlsx",
-    "organized_root": os.path.join(APP_DATA_DIR, "organized"),
-    "preview_root": os.path.join(APP_DATA_DIR, "preview"),
-    "hand_check_root": os.path.join(APP_DATA_DIR, "hand_check"),
+    "organized_root": "",
+    "preview_root": "",
+    "hand_check_root": "",
 }
 
 
@@ -66,41 +67,51 @@ def load_config():
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, encoding="utf-8-sig") as f:
             loaded = json.load(f)
+            if not isinstance(loaded, dict):
+                raise ValueError("File konfigurasi harus berupa JSON object.")
             cfg.update(loaded)
-    # Migrasi konfigurasi lama: excel_path dahulu menunjuk file, sekarang UI
-    # memilih folder. Pertahankan nama workbook lama agar file existing tetap dipakai.
-    if "excel_root" not in loaded or not cfg.get("excel_root"):
-        legacy = str(cfg.get("excel_path") or "")
-        if legacy and os.path.isdir(legacy):
-            cfg["excel_root"] = legacy
-        else:
-            cfg["excel_root"] = os.path.dirname(legacy) or os.path.join(os.path.expanduser("~"), "Documents")
-    if "excel_filename" not in loaded or not cfg.get("excel_filename"):
-        legacy = str(cfg.get("excel_path") or "")
-        name = os.path.basename(legacy)
-        cfg["excel_filename"] = name if name.lower().endswith((".xlsx", ".xlsm")) else "ZYW_Rekap.xlsx"
-    # Jangan biarkan Organized folders kosong lalu diam-diam memakai folder sumber.
-    if not str(cfg.get("organized_root") or "").strip():
-        cfg["organized_root"] = os.path.join(APP_DATA_DIR, "organized")
-    # Canonical absolute paths prevent GUI/worker processes resolving the same
-    # preference against different working directories.
-    for key, fallback in (
-        ("excel_root", os.path.join(os.path.expanduser("~"), "Documents")),
-        ("preview_root", os.path.join(APP_DATA_DIR, "preview")),
-        ("hand_check_root", os.path.join(APP_DATA_DIR, "hand_check")),
-        ("organized_root", os.path.join(APP_DATA_DIR, "organized")),
-    ):
-        cfg[key] = config_output_dir(cfg, key, fallback)
+
+    # Migrasi file Excel lama hanya jika pengguna memang menyimpan excel_path.
+    # Jangan pernah menghidupkan kembali default path C:\ZYW atau fallback tersembunyi.
+    if "excel_root" not in loaded and loaded.get("excel_path"):
+        legacy = str(loaded["excel_path"]).strip()
+        if legacy and legacy.lower() not in (r"c:\zyw\zyw_rekap.xlsx", r"c:\zyw"):
+            cfg["excel_root"] = os.path.dirname(legacy) if os.path.splitext(legacy)[1] else legacy
+            if os.path.basename(legacy).lower().endswith((".xlsx", ".xlsm")):
+                cfg["excel_filename"] = os.path.basename(legacy)
+
+    for key in ("excel_root", "preview_root", "hand_check_root", "organized_root"):
+        raw = str(cfg.get(key) or "").strip()
+        cfg[key] = os.path.abspath(os.path.expandvars(os.path.expanduser(raw))) if raw else ""
     return cfg
 
 
-def config_output_dir(cfg, key, fallback):
-    """Resolve a configured output folder consistently for GUI and worker processes."""
-    raw = str((cfg or {}).get(key) or fallback or HERE).strip()
-    return os.path.abspath(os.path.expandvars(os.path.expanduser(raw)))
+def config_output_dir(cfg, key, fallback=None):
+    """Return configured output directory; blank means setup is still required."""
+    raw = (cfg or {}).get(key, fallback)
+    raw = str(raw or "").strip()
+    return os.path.abspath(os.path.expandvars(os.path.expanduser(raw))) if raw else ""
+
+
+def prepare_output_dir(path):
+    """Create and verify a user-selected output directory; never substitute a default."""
+    raw = os.path.expandvars(os.path.expanduser(str(path or "").strip()))
+    if not raw:
+        raise ValueError("Folder tujuan belum dipilih.")
+    target = os.path.abspath(raw)
+    if os.path.exists(target) and not os.path.isdir(target):
+        raise ValueError(f"Path menunjuk ke file, bukan folder: {target}")
+    os.makedirs(target, exist_ok=True)
+    try:
+        with tempfile.NamedTemporaryFile(prefix=".zywtool-write-test-", dir=target, delete=True):
+            pass
+    except OSError as exc:
+        raise ValueError(f"Folder tidak bisa ditulisi: {target} ({exc})") from exc
+    return target
 
 
 def save_config(cfg):
+    os.makedirs(os.path.dirname(os.path.abspath(CONFIG_PATH)), exist_ok=True)
     tmp = CONFIG_PATH + ".tmp"
     try:
         with open(tmp, "w", encoding="utf-8") as f:
@@ -525,7 +536,9 @@ def arrange(sessions, cfg, root, apply=False):
     """Susun sesi ke folder grup di organized_root (atau root jika belum diatur).
     Folder sesi tidak di-rename. Sesi CORRUPT masuk _REJECTED.
     Log menyimpan path asal dan tujuan untuk mendukung undo lintas direktori."""
-    destination_root = config_output_dir(cfg, "organized_root", root)
+    destination_root = config_output_dir(cfg, "organized_root")
+    if not destination_root:
+        raise ValueError("Lokasi Organized folders belum diatur. Buka Preferences terlebih dahulu.")
     plan = []
     names = name_map(sessions, cfg)
     for s in sessions:
@@ -635,8 +648,9 @@ def export_excel(sessions, cfg):
 
     # Workbook dibuat otomatis di folder pilihan. Jangan meminta pengguna
     # memilih file; jika workbook sudah ada, pertahankan isi/status sebelumnya.
-    output_root = config_output_dir(
-        cfg, "excel_root", os.path.dirname(cfg.get("excel_path", "")) or HERE)
+    output_root = config_output_dir(cfg, "excel_root")
+    if not output_root:
+        raise ValueError("Lokasi Excel output belum diatur. Buka Preferences terlebih dahulu.")
     filename = os.path.basename(str(cfg.get("excel_filename") or "ZYW_Rekap.xlsx"))
     if not filename.lower().endswith((".xlsx", ".xlsm")):
         filename = "ZYW_Rekap.xlsx"

@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.6-2563eb">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.9-2563eb">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2F11-0f766e">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776ab">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-16a34a">
@@ -35,6 +35,7 @@ ZYWtool is a desktop toolkit for recording operations teams working with MCAP se
 - **Transparent scan audit** — partial results, missing metadata, warnings and errors are surfaced instead of being hidden.
 - **Storage accounting** — folder sizes are calculated recursively.
 - **Operational recap** — session explorer, shift/activity mapping, recording health checks and Excel export.
+- **No Shift naming** — when No Shift is active, folder names omit the shift segment entirely; they never include `S0` or a placeholder.
 - **Safer file operations** — Arrange and Undo Arrange are available in the GUI; undo validates paths and refuses unsafe overwrites.
 - **Visual inspection** — optional MediaPipe Hand Check, HTML reports and up to 30 timeline snapshots in Preview.
 - **Background jobs** — long-running tasks are managed without blocking the main interface.

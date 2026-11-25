@@ -1,19 +1,13 @@
 name: Windows Portable Release
 
-on:
-  push:
-    tags:
-      - "v*"
-    branches:
-      - main
-    paths:
-      - ".github/workflows/release.yml"
+on: push
 
 permissions:
   contents: write
 
 jobs:
   build-and-publish:
+    if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
     steps:
       - name: Checkout

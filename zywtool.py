@@ -763,8 +763,27 @@ class App:
         path_row(tabs["paths"], "Organized folders", "organized_root", "Tujuan Arrange; terpisah dari folder rekaman asli.")
         path_row(tabs["paths"], "Data source (optional)", "data_root", "Folder sumber default untuk pemindaian.")
 
+        # Keep the expanded naming editor usable in smaller screens.
+        naming_host = tabs["naming"]
+        naming_canvas = tk.Canvas(naming_host, bg=SURFACE, highlightthickness=0)
+        naming_scrollbar = ttk.Scrollbar(naming_host, orient="vertical", command=naming_canvas.yview)
+        naming_scrollbar.pack(side="right", fill="y")
+        naming_canvas.pack(side="left", fill="both", expand=True)
+        naming_canvas.configure(yscrollcommand=naming_scrollbar.set)
+        nf = tk.Frame(naming_canvas, bg=SURFACE)
+        naming_canvas_window = naming_canvas.create_window((0, 0), window=nf, anchor="nw")
+        def _update_naming_scroll_region(_event=None):
+            naming_canvas.configure(scrollregion=naming_canvas.bbox("all"))
+        def _resize_naming_content(event):
+            naming_canvas.itemconfigure(naming_canvas_window, width=event.width)
+        def _naming_mousewheel(event):
+            naming_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        nf.bind("<Configure>", _update_naming_scroll_region)
+        naming_canvas.bind("<Configure>", _resize_naming_content)
+        naming_canvas.bind("<Enter>", lambda _event: naming_canvas.bind_all("<MouseWheel>", _naming_mousewheel))
+        naming_canvas.bind("<Leave>", lambda _event: naming_canvas.unbind_all("<MouseWheel>"))
+
         # JSON-backed naming convention editor. This scanner is independent of the main MCAP scan.
-        nf = tabs["naming"]
         naming_cfg = self.cfg.get("naming", {}) or {}
         section(nf, "JSON variable scanner",
                 "Pilih session.json contoh. Scanner membaca nested object dan array, lalu menampilkan field beserta contoh nilainya.")
@@ -1123,8 +1142,20 @@ class App:
         naming_preview_var = tk.StringVar(value="Preview akan muncul setelah JSON dipindai.")
         tk.Label(nf, textvariable=naming_preview_var, bg="#F7F8FA", fg=INK,
                  font=("Consolas", 9), anchor="w", justify="left", wraplength=900,
-                 padx=10, pady=8).pack(fill="x", padx=16, pady=(0, 10))
+                 padx=10, pady=8).pack(fill="x", padx=16, pady=(0, 5))
+        tk.Label(nf, text="MULTI-RECORD PREVIEW · hingga 20 record pertama jika JSON berupa array",
+                 bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=16, pady=(2, 3))
+        preview_tree = ttk.Treeview(nf, columns=("task", "result"), show="tree headings", height=4)
+        preview_tree.heading("#0", text="#")
+        preview_tree.heading("task", text="SOURCE / TASK")
+        preview_tree.heading("result", text="GENERATED FOLDER NAME")
+        preview_tree.column("#0", width=42, anchor="center", stretch=False)
+        preview_tree.column("task", width=300, minwidth=160)
+        preview_tree.column("result", width=470, minwidth=220)
+        preview_tree.pack(fill="x", padx=16, pady=(0, 12))
         def update_naming_preview(*_args):
+            for iid in preview_tree.get_children():
+                preview_tree.delete(iid)
             if not detected_fields or not os.path.isfile(source_json_var.get()):
                 naming_preview_var.set("Preview akan muncul setelah JSON dipindai.")
                 variables_preview_var.set("Custom variable preview akan muncul setelah JSON di-scan.")
@@ -1132,9 +1163,10 @@ class App:
             try:
                 with open(source_json_var.get(), encoding="utf-8-sig") as stream:
                     sample = json.load(stream)
-                meta = sample if isinstance(sample, dict) else (sample[0] if sample and isinstance(sample[0], dict) else {})
-                task = str(meta.get("task") or "")
-                device_no, activity = core._task_fields(task)
+                records = sample if isinstance(sample, list) else [sample]
+                records = [item for item in records if isinstance(item, dict)][:20]
+                if not records:
+                    raise ValueError("JSON tidak berisi object sesi untuk preview.")
                 field_map = {k: ("" if v.get() == "(Auto / derived)" else v.get())
                              for k, v in map_vars.items()}
                 preview_shifts = [[start.get(), end.get(), name.get(), int(number.get())]
@@ -1144,30 +1176,49 @@ class App:
                 preview_cfg["shifts"] = preview_shifts
                 preview_cfg["naming"] = {"template": template_var.get(), "field_map": field_map,
                                          "variables": json.loads(json.dumps(custom_variables))}
-                start_time = None
-                raw_stamp = meta.get("start_time_unix")
-                if raw_stamp not in (None, ""):
-                    try:
-                        stamp = float(raw_stamp)
-                        if abs(stamp) >= 1e14:
-                            stamp /= 1e6
-                        elif abs(stamp) >= 1e11:
-                            stamp /= 1e3
-                        start_time = dt.datetime.fromtimestamp(stamp, core.WIB)
-                    except (TypeError, ValueError, OSError, OverflowError):
-                        start_time = None
                 from types import SimpleNamespace
-                fake = SimpleNamespace(metadata=meta, start=start_time, location=meta.get("location", ""),
-                    capturer=meta.get("capturer", ""), task=task, device_no=device_no,
-                    activity=activity, shift="", split={}, duration_s=0.0, overtime_min=0.0, end=None)
-                if start_time and mode_var.get() != "none" and preview_shifts:
-                    core.split_shifts(fake, preview_shifts, enabled=True)
-                values = core.naming.evaluate_variables(fake, preview_cfg)
-                custom_values = [f"{item['name'].upper()}={values.get(item['name'].upper(), '')}"
+                first_values = {}
+                errors = []
+                for row_number, meta in enumerate(records, 1):
+                    task = str(meta.get("task") or "")
+                    device_no, activity = core._task_fields(task)
+                    start_time = None
+                    raw_stamp = meta.get("start_time_unix")
+                    if raw_stamp not in (None, ""):
+                        try:
+                            stamp = float(raw_stamp)
+                            if abs(stamp) >= 1e14:
+                                stamp /= 1e6
+                            elif abs(stamp) >= 1e11:
+                                stamp /= 1e3
+                            start_time = dt.datetime.fromtimestamp(stamp, core.WIB)
+                        except (TypeError, ValueError, OSError, OverflowError):
+                            start_time = None
+                    fake = SimpleNamespace(metadata=meta, start=start_time, location=meta.get("location", ""),
+                        capturer=meta.get("capturer", ""), task=task, device_no=device_no,
+                        activity=activity, shift="", split={}, duration_s=0.0, overtime_min=0.0, end=None)
+                    if start_time and mode_var.get() != "none" and preview_shifts:
+                        core.split_shifts(fake, preview_shifts, enabled=True)
+                    try:
+                        values = core.naming.evaluate_variables(fake, preview_cfg)
+                        folder_name = core.naming.build_folder_name(fake, preview_cfg)
+                        preview_tree.insert("", "end", iid=str(row_number),
+                            text=str(row_number), values=(task or "(task kosong)", folder_name))
+                        if row_number == 1:
+                            first_values = values
+                    except Exception as exc:
+                        errors.append(f"Record {row_number}: {exc}")
+                        preview_tree.insert("", "end", iid=str(row_number),
+                            text=str(row_number), values=(task or "(task kosong)", "ERROR: " + str(exc)))
+                custom_values = [f"{item['name'].upper()}={first_values.get(item['name'].upper(), '')}"
                                  for item in custom_variables]
                 variables_preview_var.set("   |   ".join(custom_values) if custom_values
                                           else "Belum ada custom variable.")
-                naming_preview_var.set("Preview: " + core.naming.build_folder_name(fake, preview_cfg))
+                success_count = len(records) - len(errors)
+                naming_preview_var.set(
+                    f"Preview: {success_count}/{len(records)} record berhasil diproses"
+                    + (f" · {len(errors)} error" if errors else "")
+                )
             except Exception as exc:
                 naming_preview_var.set("Preview belum dapat dibuat: " + str(exc))
                 variables_preview_var.set("Periksa variable / transform: " + str(exc))

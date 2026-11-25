@@ -1278,7 +1278,8 @@ class App:
         preset_names = list(builtin) + [x for x in custom if x not in builtin]
         preset_var = tk.StringVar(value=self.cfg.get("active_preset", "Default (Legacy Workflow)"))
         preset_row = tk.Frame(pf, bg=SURFACE); preset_row.pack(fill="x", padx=16, pady=8)
-        ttk.Combobox(preset_row, textvariable=preset_var, values=preset_names, state="readonly", width=32).pack(side="left")
+        preset_box = ttk.Combobox(preset_row, textvariable=preset_var, values=preset_names, state="readonly", width=32)
+        preset_box.pack(side="left")
         def load_selected_preset():
             name = preset_var.get()
             try:
@@ -1291,6 +1292,61 @@ class App:
             except Exception as exc:
                 messagebox.showerror("Preset", str(exc), parent=win)
         self._button(preset_row, "APPLY PRESET", load_selected_preset, dark=True).pack(side="left", padx=8)
+        preset_io_row = tk.Frame(pf, bg=SURFACE)
+        preset_io_row.pack(fill="x", padx=16, pady=(0, 8))
+        def preset_config_for_export(name):
+            catalog = core.preset_catalog(self.cfg)
+            catalog.update(self.cfg.get("custom_presets", {}) or {})
+            if name not in catalog:
+                raise ValueError(f"Preset tidak ditemukan: {name}")
+            result = json.loads(json.dumps(catalog[name]))
+            if "naming" not in result:
+                result["naming"] = json.loads(json.dumps(self.cfg.get("naming", core.DEFAULT_CONFIG["naming"])))
+            return result
+        def export_preset(name):
+            try:
+                payload = preset_config_for_export(name)
+                path = filedialog.asksaveasfilename(parent=win, title="Export ZYWTool preset",
+                    initialfile=(re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_") or "ZYWTool_Preset") + ".zywpreset.json",
+                    defaultextension=".zywpreset.json",
+                    filetypes=[("ZYWTool preset", "*.zywpreset.json"), ("JSON", "*.json")])
+                if not path:
+                    return
+                saved = preset_io.export_preset_file(path, name, payload)
+                messagebox.showinfo("Preset Export", f"Preset berhasil diekspor:\n{saved}\n\nFolder output, folder data, dan path lokal tidak ikut diekspor.", parent=win)
+            except Exception as exc:
+                messagebox.showerror("Preset Export", str(exc), parent=win)
+        def export_default_preset():
+            export_preset("Default (Legacy Workflow)")
+        def export_selected_preset():
+            export_preset(preset_var.get())
+        def import_preset():
+            path = filedialog.askopenfilename(parent=win, title="Import ZYWTool preset",
+                filetypes=[("ZYWTool preset", "*.zywpreset.json"), ("JSON", "*.json")])
+            if not path:
+                return
+            try:
+                name, imported_config = preset_io.import_preset_file(path)
+                if imported_config.get("shift_mode", "enabled") != "none" and imported_config.get("shifts"):
+                    core.validate_shifts(imported_config["shifts"])
+                target_name = name
+                suffix = 1
+                while target_name in builtin or target_name in self.cfg.get("custom_presets", {}):
+                    suffix += 1
+                    target_name = f"{name} (Imported {suffix})"
+                self.cfg.setdefault("custom_presets", {})[target_name] = imported_config
+                core.save_config(self.cfg)
+                preset_names.append(target_name)
+                preset_box.configure(values=preset_names)
+                preset_var.set(target_name)
+                messagebox.showinfo("Preset Import",
+                    f"Preset '{target_name}' berhasil diimpor.\nPreset belum diterapkan. Pilih APPLY PRESET untuk menggunakannya.",
+                    parent=win)
+            except Exception as exc:
+                messagebox.showerror("Preset Import", str(exc), parent=win)
+        self._button(preset_io_row, "EXPORT DEFAULT PRESET", export_default_preset, dark=True).pack(side="left")
+        self._button(preset_io_row, "EXPORT SELECTED", export_selected_preset, dark=False).pack(side="left", padx=6)
+        self._button(preset_io_row, "IMPORT PRESET", import_preset, dark=False).pack(side="left", padx=6)
         save_row = tk.Frame(pf, bg=SURFACE); save_row.pack(fill="x", padx=16, pady=8)
         preset_name = tk.StringVar()
         ttk.Entry(save_row, textvariable=preset_name, width=34).pack(side="left")
@@ -1313,9 +1369,13 @@ class App:
                 snapshot = {"shift_mode": mode_var.get(), "shifts": shifts, "check_mode": op_vars["check_mode"].get(), "qc": op_vars["qc"].get(),
                             "supervisor": op_vars["supervisor"].get(), "activities": activities,
                             "naming": {"source_json": source_json_var.get().strip(), "template": template_var.get().strip(),
-                                       "field_map": {k: ("" if v.get() == "(Auto / derived)" else v.get()) for k, v in map_vars.items()}},
+                                       "field_map": {k: ("" if v.get() == "(Auto / derived)" else v.get()) for k, v in map_vars.items()},
+                                       "variables": json.loads(json.dumps(custom_variables))},
                             "hand_check": {k: v.get() for k,v in hc_vars.items()} |
                                           {"rule": hc_rule.get(), **{k:v.get() for k,v in hc_flags.items()}}}
+                core.naming.validate_naming_config(snapshot["naming"])
+                if mode_var.get() != "none":
+                    core.validate_shifts(shifts)
                 self.cfg.setdefault("custom_presets", {})[name] = snapshot
                 self.cfg["active_preset"] = name
                 core.save_config(self.cfg)
@@ -1361,14 +1421,16 @@ class App:
                 if not activities:
                     raise ValueError("Minimal satu aktivitas/ruangan harus tersedia.")
                 new_cfg = dict(self.cfg)
-                new_cfg.update({"config_version": 2, "shift_mode": mode_var.get(), "shifts": shifts,
+                new_cfg.update({"config_version": 3, "shift_mode": mode_var.get(), "shifts": shifts,
                                 "check_mode": op_vars["check_mode"].get(),
                                 "qc": op_vars["qc"].get().strip(), "supervisor": op_vars["supervisor"].get().strip(),
                                 "activities": activities,
                                 "naming": {"source_json": source_json_var.get().strip(), "template": template_var.get().strip(),
-                                           "field_map": {k: ("" if v.get() == "(Auto / derived)" else v.get()) for k, v in map_vars.items()}},
+                                           "field_map": {k: ("" if v.get() == "(Auto / derived)" else v.get()) for k, v in map_vars.items()},
+                                           "variables": json.loads(json.dumps(custom_variables))},
                                 "hand_check": {k: v.get() for k,v in hc_vars.items()} |
                                               {"rule": hc_rule.get(), **{k:v.get() for k,v in hc_flags.items()}}})
+                core.naming.validate_naming_config(new_cfg["naming"])
                 if developer_var.get() and hasattr(self, "_dev_json_text"):
                     advanced = json.loads(self._dev_json_text.get("1.0", "end"))
                     for key in ("shift_mode", "shifts", "check_mode", "qc", "supervisor", "activities", "hand_check"):

@@ -16,7 +16,7 @@ PRESET_KEYS = (
 
 def _portable_config(config):
     if not isinstance(config, dict):
-        raise ValueError("Preset harus berupa object JSON.")
+        raise TypeError("Preset harus berupa object JSON.")
     result = {key: config[key] for key in PRESET_KEYS if key in config}
     if "naming" in result:
         result["naming"] = json.loads(json.dumps(result["naming"], ensure_ascii=False))

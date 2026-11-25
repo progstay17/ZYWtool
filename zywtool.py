@@ -5,6 +5,7 @@ import os
 import sys
 import subprocess
 import threading
+import datetime as dt
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -866,9 +867,11 @@ class App:
                     values=(item.get("source", ""),
                             len(item.get("operations", []) or []),
                             "ENABLED" if item.get("enabled", True) else "DISABLED"))
-            if "token_box" in locals():
+            try:
                 token_box.configure(values=list(core.naming.TOKENS) +
                                     [item.get("name", "").upper() for item in custom_variables])
+            except NameError:
+                pass
         def edit_custom_variable(index=None):
             original = (json.loads(json.dumps(custom_variables[index]))
                         if index is not None else
@@ -1063,11 +1066,13 @@ class App:
                     core.naming.validate_naming_config({"template": "{" + definition["name"] + "}",
                                                          "variables": [definition]})
                     if index is None:
+                        if index is None:
                         custom_variables.append(definition)
                     else:
                         custom_variables[index] = definition
                     refresh_custom_variable_tree()
                     dialog.destroy()
+                    update_naming_preview()
                 except Exception as exc:
                     messagebox.showerror("Custom Variable", str(exc), parent=dialog)
             self._button(dialog, "SAVE VARIABLE", save_variable, dark=True).pack(anchor="e", padx=16, pady=14)
@@ -1085,6 +1090,7 @@ class App:
             if index is not None:
                 custom_variables.pop(index)
                 refresh_custom_variable_tree()
+                update_naming_preview()
         custom_buttons = tk.Frame(nf, bg=SURFACE)
         custom_buttons.pack(fill="x", padx=16, pady=(0, 6))
         self._button(custom_buttons, "+ ADD VARIABLE", add_custom_variable, dark=True).pack(side="left")
@@ -1103,8 +1109,11 @@ class App:
         template_row.pack(fill="x", padx=16, pady=(0, 6))
         ttk.Entry(template_row, textvariable=template_var).pack(side="left", fill="x", expand=True, padx=(0, 8))
         token_add_var = tk.StringVar(value="DATE")
-        ttk.Combobox(template_row, textvariable=token_add_var, values=list(core.naming.TOKENS),
-                     state="readonly", width=18).pack(side="left", padx=(0, 6))
+        token_box = ttk.Combobox(template_row, textvariable=token_add_var,
+                                  values=list(core.naming.TOKENS) +
+                                         [item.get("name", "").upper() for item in custom_variables],
+                                  state="readonly", width=22)
+        token_box.pack(side="left", padx=(0, 6))
         def insert_naming_token():
             current = template_var.get().strip()
             template_var.set((current + "_" if current else "") + "{" + token_add_var.get() + "}")
@@ -1119,6 +1128,7 @@ class App:
         def update_naming_preview(*_args):
             if not detected_fields or not os.path.isfile(source_json_var.get()):
                 naming_preview_var.set("Preview akan muncul setelah JSON dipindai.")
+                variables_preview_var.set("Custom variable preview akan muncul setelah JSON di-scan.")
                 return
             try:
                 with open(source_json_var.get(), encoding="utf-8-sig") as stream:
@@ -1126,21 +1136,42 @@ class App:
                 meta = sample if isinstance(sample, dict) else (sample[0] if sample and isinstance(sample[0], dict) else {})
                 task = str(meta.get("task") or "")
                 device_no, activity = core._task_fields(task)
-                shift_label = ""
-                if mode_var.get() != "none" and self.cfg.get("shifts"):
-                    shift_label = str(self.cfg["shifts"][0][2])
                 field_map = {k: ("" if v.get() == "(Auto / derived)" else v.get())
                              for k, v in map_vars.items()}
+                preview_shifts = [[start.get(), end.get(), name.get(), int(number.get())]
+                                  for name, start, end, number in shift_rows]
                 preview_cfg = dict(self.cfg)
                 preview_cfg["shift_mode"] = mode_var.get()
-                preview_cfg["naming"] = {"template": template_var.get(), "field_map": field_map}
+                preview_cfg["shifts"] = preview_shifts
+                preview_cfg["naming"] = {"template": template_var.get(), "field_map": field_map,
+                                         "variables": json.loads(json.dumps(custom_variables))}
+                start_time = None
+                raw_stamp = meta.get("start_time_unix")
+                if raw_stamp not in (None, ""):
+                    try:
+                        stamp = float(raw_stamp)
+                        if abs(stamp) >= 1e14:
+                            stamp /= 1e6
+                        elif abs(stamp) >= 1e11:
+                            stamp /= 1e3
+                        start_time = dt.datetime.fromtimestamp(stamp, core.WIB)
+                    except (TypeError, ValueError, OSError, OverflowError):
+                        start_time = None
                 from types import SimpleNamespace
-                fake = SimpleNamespace(metadata=meta, start=None, location=meta.get("location", ""),
+                fake = SimpleNamespace(metadata=meta, start=start_time, location=meta.get("location", ""),
                     capturer=meta.get("capturer", ""), task=task, device_no=device_no,
-                    activity=activity, shift=shift_label)
+                    activity=activity, shift="", split={}, duration_s=0.0, overtime_min=0.0, end=None)
+                if start_time and mode_var.get() != "none" and preview_shifts:
+                    core.split_shifts(fake, preview_shifts, enabled=True)
+                values = core.naming.evaluate_variables(fake, preview_cfg)
+                custom_values = [f"{item['name'].upper()}={values.get(item['name'].upper(), '')}"
+                                 for item in custom_variables]
+                variables_preview_var.set("   |   ".join(custom_values) if custom_values
+                                          else "Belum ada custom variable.")
                 naming_preview_var.set("Preview: " + core.naming.build_folder_name(fake, preview_cfg))
             except Exception as exc:
                 naming_preview_var.set("Preview belum dapat dibuat: " + str(exc))
+                variables_preview_var.set("Periksa variable / transform: " + str(exc))
         template_var.trace_add("write", update_naming_preview)
         for _token_var in map_vars.values():
             _token_var.trace_add("write", update_naming_preview)

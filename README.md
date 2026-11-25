@@ -118,6 +118,8 @@ Tests use temporary directories and synthetic fixtures; they do not require oper
 | --- | --- |
 | `zywtool.py` | Main desktop GUI |
 | `zyw_core.py` | Discovery, scanning, organization and Excel logic |
+| `naming.py` | Dynamic naming variables, extraction and transformation pipeline |
+| `preset_io.py` | Path-safe portable preset export/import |
 | `handcheck.py` / `handreport.py` | Hand Check and HTML reporting |
 | `preview_frames.py` | Timeline preview generation |
 | `undo_arrange.py` | Guarded restoration for Arrange operations |

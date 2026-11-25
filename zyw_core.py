@@ -63,6 +63,8 @@ DEFAULT_CONFIG = {
     "preview_root": "",
     "hand_check_root": "",
     "check_mode": "quick",
+    "naming": {"source_json": "", "template": naming.DEFAULT_TEMPLATE,
+               "field_map": dict(naming.DEFAULT_FIELD_MAP), "variables": []},
 }
 
 
@@ -94,7 +96,12 @@ def load_config():
             item[2] = legacy_labels[item[2]]
     cfg.setdefault("custom_presets", {})
     cfg.setdefault("naming", {"source_json": "", "template": naming.DEFAULT_TEMPLATE,
-                              "field_map": dict(naming.DEFAULT_FIELD_MAP)})
+                              "field_map": dict(naming.DEFAULT_FIELD_MAP), "variables": []})
+    cfg["naming"].setdefault("source_json", "")
+    cfg["naming"].setdefault("template", naming.DEFAULT_TEMPLATE)
+    cfg["naming"].setdefault("field_map", dict(naming.DEFAULT_FIELD_MAP))
+    cfg["naming"].setdefault("variables", [])
+    naming.validate_naming_config(cfg["naming"])
     # Preserve the existing v1.0.5 operational setup as the users legacy default preset.
     if loaded and "active_preset" not in loaded:
         cfg["custom_presets"]["Default (Legacy Workflow)"] = {
@@ -159,6 +166,7 @@ def preset_catalog(cfg=None):
     base = DEFAULT_CONFIG
     legacy = {k: json.loads(json.dumps(base.get(k, DEFAULT_CONFIG.get(k))))
               for k in ("shift_mode", "shifts", "check_mode", "qc", "supervisor", "activities", "hand_check")}
+    legacy["naming"] = json.loads(json.dumps(base["naming"]))
     morning = json.loads(json.dumps(legacy))
     morning["shift_mode"] = "enabled"
     morning["shifts"] = [["07:00", "15:00", "7 AM - 3 PM", 1]]

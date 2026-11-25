@@ -18,7 +18,7 @@ import zyw_core as core  # noqa: E402
 import handcheck  # noqa: E402
 import jobs  # noqa: E402
 
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 
 BG = "#F3F4F6"
 SURFACE = "#FFFFFF"
@@ -356,7 +356,7 @@ class App:
             if job.cancel.is_set():
                 return None
             for s in sess:
-                core.split_shifts(s, self.cfg["shifts"])
+                core.split_shifts(s, self.cfg.get("shifts", []), enabled=self.cfg.get("shift_mode", "enabled") != "none")
             if hand and core.LAST_HAND_REPORT:
                 job.output = core.LAST_HAND_REPORT
             return sess
@@ -382,7 +382,7 @@ class App:
             return
         self.sessions = sess
         self.by_name = {s.name: s for s in sess}
-        labels = ["(semua)"] + [x[2] for x in self.cfg["shifts"]] + ["DI LUAR SHIFT"]
+        labels = ["(semua)"] + ([x[2] for x in self.cfg.get("shifts", [])] + ["DI LUAR SHIFT"] if self.cfg.get("shift_mode", "enabled") != "none" else [core.NO_SHIFT])
         self.shift_box["values"] = labels
         failed = [s for s in sess if s.health == "CORRUPT"]
         no_start = [s for s in sess if s.start is None]
@@ -706,76 +706,277 @@ class App:
     def open_settings(self, first_run=False):
         win = tk.Toplevel(self.root)
         win.title("Initial Setup" if first_run else "Preferences")
-        win.geometry("820x650")
-        win.minsize(700, 560)
+        win.geometry("1040x790")
+        win.minsize(900, 680)
         win.configure(bg=BG)
-        tk.Label(win, text="FIRST-TIME SETUP" if first_run else "WORKSPACE PREFERENCES", bg=BG, fg=INK,
-                 font=("Segoe UI Semibold", 17)).pack(anchor="w", padx=18, pady=(16, 8))
-        card = tk.Frame(win, bg=SURFACE, highlightbackground=LINE, highlightthickness=1)
-        card.pack(fill="x", padx=18, pady=(0, 12))
-        fields = tk.Frame(card, bg=SURFACE)
-        fields.pack(fill="x", padx=14, pady=12)
+        tk.Label(win, text="FIRST-TIME SETUP" if first_run else "WORKSPACE PREFERENCES",
+                 bg=BG, fg=INK, font=("Segoe UI Semibold", 17)).pack(anchor="w", padx=18, pady=(16, 3))
+        tk.Label(win, text="Atur workflow operasional tanpa mengedit file konfigurasi.",
+                 bg=BG, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=(0, 12))
+        book = ttk.Notebook(win)
+        book.pack(fill="both", expand=True, padx=18, pady=(0, 12))
+        tabs = {}
+        for key, title in (("paths", "Folders"), ("shifts", "Shift Manager"),
+                           ("ops", "Operational"), ("hand", "Hand Check"), ("presets", "Presets")):
+            frame = tk.Frame(book, bg=SURFACE)
+            book.add(frame, text=title)
+            tabs[key] = frame
         vars_ = {}
-        def path_row(label, key, hint):
-            row = tk.Frame(fields, bg=SURFACE)
-            row.pack(fill="x", pady=(6, 0))
-            tk.Label(row, text=label, bg=SURFACE, fg=INK,
-                     font=("Segoe UI", 9, "bold"), width=19, anchor="w").pack(side="left")
+        def section(parent, title, hint=""):
+            tk.Label(parent, text=title.upper(), bg=SURFACE, fg=MUTED,
+                     font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=16, pady=(14, 3))
+            if hint:
+                tk.Label(parent, text=hint, bg=SURFACE, fg=MUTED,
+                         font=("Segoe UI", 8)).pack(anchor="w", padx=16, pady=(0, 6))
+        def path_row(parent, label, key, hint):
+            row = tk.Frame(parent, bg=SURFACE)
+            row.pack(fill="x", padx=16, pady=6)
+            tk.Label(row, text=label, bg=SURFACE, fg=INK, width=20, anchor="w",
+                     font=("Segoe UI", 9, "bold")).pack(side="left")
             var = tk.StringVar(value=str(self.cfg.get(key) or ""))
             vars_[key] = var
             ttk.Entry(row, textvariable=var).pack(side="left", fill="x", expand=True, padx=(0, 8))
             def browse():
                 current = var.get().strip()
-                chosen = filedialog.askdirectory(
-                    parent=win, title=f"Pilih folder {label}",
-                    initialdir=current if os.path.isdir(current) else os.path.expanduser("~"),
-                    mustexist=True)
+                chosen = filedialog.askdirectory(parent=win, title=f"Pilih {label}",
+                    initialdir=current if os.path.isdir(current) else os.path.expanduser("~"), mustexist=True)
                 if chosen:
                     var.set(os.path.abspath(chosen))
             self._button(row, "BROWSE", browse, dark=False).pack(side="right")
-            tk.Label(fields, text=hint, bg=SURFACE, fg=MUTED,
-                     font=("Segoe UI", 8)).pack(anchor="w", padx=(154, 0), pady=(1, 2))
-        tk.Label(fields, text="FILE & OUTPUT LOCATIONS", bg=SURFACE, fg=MUTED,
-                 font=("Segoe UI", 8, "bold")).pack(anchor="w", pady=(0, 5))
+            tk.Label(parent, text=hint, bg=SURFACE, fg=MUTED, font=("Segoe UI", 8)).pack(
+                anchor="w", padx=(174, 16), pady=(0, 3))
+        section(tabs["paths"], "File & output locations",
+                "Pilih folder tujuan. ZYWtool akan membuat folder baru bila belum ada dan memeriksa akses tulis.")
         excel_name = os.path.basename(str(self.cfg.get("excel_filename") or "ZYW_Rekap.xlsx"))
-        path_row("Excel output folder", "excel_root",
-                 f"Workbook {excel_name} dibuat otomatis di folder ini saat Export to Excel.")
-        path_row("Preview output", "preview_root",
-                 "Gambar preview disimpan di subfolder grup di dalam folder ini.")
-        path_row("Hand Check output", "hand_check_root",
-                 "Laporan disimpan di subfolder reports di dalam folder ini.")
-        path_row("Organized folders", "organized_root",
-                 "Folder sesi dipindahkan ke subfolder grup di dalam folder ini.")
-        card2 = tk.Frame(win, bg=SURFACE, highlightbackground=LINE, highlightthickness=1)
-        card2.pack(fill="both", expand=True, padx=18, pady=(0, 12))
-        tk.Label(card2, text="ADVANCED SETTINGS (JSON)", bg=SURFACE, fg=MUTED,
-                 font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=14, pady=(10, 2))
-        txt = tk.Text(card2, wrap="none", relief="flat", font=("Consolas", 9), padx=12, pady=10,
-                      height=12)
-        txt.pack(fill="both", expand=True, padx=8, pady=(2, 8))
-        keys = ["shifts", "qc", "supervisor", "hand_check"]
-        txt.insert("1.0", json.dumps({k: self.cfg[k] for k in keys}, indent=2, ensure_ascii=False))
+        path_row(tabs["paths"], "Excel output folder", "excel_root",
+                 f"Workbook {excel_name} dibuat otomatis saat Export to Excel.")
+        filename_row = tk.Frame(tabs["paths"], bg=SURFACE)
+        filename_row.pack(fill="x", padx=16, pady=6)
+        tk.Label(filename_row, text="Excel workbook name", bg=SURFACE, fg=INK, width=20, anchor="w",
+                 font=("Segoe UI", 9, "bold")).pack(side="left")
+        vars_["excel_filename"] = tk.StringVar(value=excel_name)
+        ttk.Entry(filename_row, textvariable=vars_["excel_filename"]).pack(side="left", fill="x", expand=True)
+        path_row(tabs["paths"], "Preview output", "preview_root", "Penyimpanan gambar timeline preview.")
+        path_row(tabs["paths"], "Hand Check output", "hand_check_root", "Laporan HTML Hand Check.")
+        path_row(tabs["paths"], "Organized folders", "organized_root", "Tujuan Arrange; terpisah dari folder rekaman asli.")
+        path_row(tabs["paths"], "Data source (optional)", "data_root", "Folder sumber default untuk pemindaian.")
+
+        # Shift manager: selectable 24-hour time controls, editable labels and ordering.
+        sf = tabs["shifts"]
+        section(sf, "Shift mode", "Pilih Shift-based untuk pembagian shift, atau No Shift bila operasional tidak memakai shift.")
+        mode_var = tk.StringVar(value=self.cfg.get("shift_mode", "enabled"))
+        mode_box = tk.Frame(sf, bg=SURFACE)
+        mode_box.pack(fill="x", padx=16, pady=(2, 8))
+        ttk.Radiobutton(mode_box, text="Shift-based", variable=mode_var, value="enabled").pack(side="left", padx=(0, 24))
+        ttk.Radiobutton(mode_box, text="No Shift", variable=mode_var, value="none").pack(side="left")
+        tk.Label(sf, text="Jam menggunakan format 24 jam. Shift yang melewati tengah malam didukung.",
+                 bg=SURFACE, fg=MUTED, font=("Segoe UI", 8)).pack(anchor="w", padx=16, pady=(0, 8))
+        shift_wrap = tk.Frame(sf, bg=SURFACE)
+        shift_wrap.pack(fill="both", expand=True, padx=12)
+        shift_rows = []
+        hours = [f"{h:02d}:{m:02d}" for h in range(24) for m in range(0, 60, 5)]
+        def rebuild_shifts():
+            for child in shift_wrap.winfo_children():
+                child.destroy()
+            tk.Label(shift_wrap, text="SHIFT NAME", bg=SURFACE, fg=MUTED, width=22, anchor="w",
+                     font=("Segoe UI", 8, "bold")).grid(row=0, column=0, padx=4, pady=5, sticky="w")
+            tk.Label(shift_wrap, text="START", bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold")).grid(row=0, column=1, padx=4)
+            tk.Label(shift_wrap, text="END", bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold")).grid(row=0, column=2, padx=4)
+            tk.Label(shift_wrap, text="#", bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold")).grid(row=0, column=3, padx=4)
+            for idx, item in enumerate(shift_rows):
+                name_v, start_v, end_v, num_v = item
+                ttk.Entry(shift_wrap, textvariable=name_v, width=25).grid(row=idx+1, column=0, padx=4, pady=4, sticky="ew")
+                ttk.Combobox(shift_wrap, textvariable=start_v, values=hours, width=10, state="readonly").grid(row=idx+1, column=1, padx=4)
+                ttk.Combobox(shift_wrap, textvariable=end_v, values=hours, width=10, state="readonly").grid(row=idx+1, column=2, padx=4)
+                ttk.Spinbox(shift_wrap, from_=1, to=20, textvariable=num_v, width=4).grid(row=idx+1, column=3, padx=4)
+                ttk.Button(shift_wrap, text="↑", width=3, command=lambda i=idx: move_shift(i, -1)).grid(row=idx+1, column=4, padx=2)
+                ttk.Button(shift_wrap, text="↓", width=3, command=lambda i=idx: move_shift(i, 1)).grid(row=idx+1, column=5, padx=2)
+                ttk.Button(shift_wrap, text="Remove", command=lambda i=idx: remove_shift(i)).grid(row=idx+1, column=6, padx=4)
+        def move_shift(index, delta):
+            target = index + delta
+            if 0 <= target < len(shift_rows):
+                shift_rows[index], shift_rows[target] = shift_rows[target], shift_rows[index]
+                rebuild_shifts()
+        def remove_shift(index):
+            shift_rows.pop(index)
+            rebuild_shifts()
+        def add_shift():
+            n = len(shift_rows) + 1
+            shift_rows.append([tk.StringVar(value=f"Shift {n}"), tk.StringVar(value="07:00"),
+                               tk.StringVar(value="15:00"), tk.StringVar(value=str(n))])
+            rebuild_shifts()
+        for item in self.cfg.get("shifts", []):
+            shift_rows.append([tk.StringVar(value=str(item[2])), tk.StringVar(value=str(item[0])),
+                               tk.StringVar(value=str(item[1])), tk.StringVar(value=str(item[3] if len(item)>3 else len(shift_rows)+1))])
+        rebuild_shifts()
+        self._button(sf, "+ ADD SHIFT", add_shift, dark=False).pack(anchor="w", padx=16, pady=10)
+
+        # Operational configuration
+        op = tabs["ops"]
+        section(op, "People & quality", "Nilai ini digunakan sebagai default untuk workflow laporan.")
+        op_vars = {}
+        for label, key in (("QC default", "qc"), ("Supervisor default", "supervisor")):
+            row = tk.Frame(op, bg=SURFACE); row.pack(fill="x", padx=16, pady=5)
+            tk.Label(row, text=label, bg=SURFACE, fg=INK, width=20, anchor="w").pack(side="left")
+            op_vars[key] = tk.StringVar(value=str(self.cfg.get(key) or ""))
+            ttk.Entry(row, textvariable=op_vars[key]).pack(side="left", fill="x", expand=True)
+        row = tk.Frame(op, bg=SURFACE); row.pack(fill="x", padx=16, pady=5)
+        tk.Label(row, text="MCAP scan mode", bg=SURFACE, fg=INK, width=20, anchor="w").pack(side="left")
+        op_vars["check_mode"] = tk.StringVar(value=str(self.cfg.get("check_mode", "quick")))
+        ttk.Combobox(row, textvariable=op_vars["check_mode"], values=["quick", "full"], state="readonly", width=14).pack(side="left")
+        section(op, "Activities & room aliases", "Satu baris per aktivitas: Nama kanonik | alias1, alias2, alias3")
+        activity_text = tk.Text(op, height=12, wrap="word", relief="solid", bd=1, font=("Consolas", 9))
+        activity_text.pack(fill="both", expand=True, padx=16, pady=(2, 12))
+        for name, aliases in self.cfg.get("activities", {}).items():
+            activity_text.insert("end", f"{name} | {', '.join(aliases)}\n")
+
+        # Hand Check
+        hf = tabs["hand"]
+        section(hf, "Hand Check parameters", "Fitur ini opsional dan lebih lambat. Semua pengaturan lama tetap tersedia.")
+        hc_vars = {}
+        hc = self.cfg.get("hand_check", core.DEFAULT_CONFIG["hand_check"])
+        hc_fields = [("frames", "Frames per session", 1, 500), ("sample_every_s", "Sample interval (sec)", 1, 600),
+                     ("min_frames", "Minimum frames", 1, 500), ("max_frames", "Maximum frames", 1, 1000),
+                     ("max_error_pct", "Maximum error (%)", 0, 100), ("conf", "Detection confidence", 0.05, 1.0),
+                     ("cam", "Camera index", 0, 20)]
+        for key, label, lo, hi in hc_fields:
+            row = tk.Frame(hf, bg=SURFACE); row.pack(fill="x", padx=16, pady=4)
+            tk.Label(row, text=label, bg=SURFACE, fg=INK, width=25, anchor="w").pack(side="left")
+            hc_vars[key] = tk.StringVar(value=str(hc.get(key, core.DEFAULT_CONFIG["hand_check"].get(key, ""))))
+            ttk.Entry(row, textvariable=hc_vars[key], width=16).pack(side="left")
+        hc_rule = tk.StringVar(value=str(hc.get("rule", "strict")))
+        row = tk.Frame(hf, bg=SURFACE); row.pack(fill="x", padx=16, pady=4)
+        tk.Label(row, text="Rule", bg=SURFACE, fg=INK, width=25, anchor="w").pack(side="left")
+        ttk.Combobox(row, textvariable=hc_rule, values=["strict", "balanced", "lenient"], state="readonly", width=14).pack(side="left")
+        hc_flags = {}
+        for key, label in (("tiles", "Generate frame tiles"), ("report", "Generate HTML report"), ("use_cache", "Use cached results")):
+            hc_flags[key] = tk.BooleanVar(value=bool(hc.get(key, False)))
+            ttk.Checkbutton(hf, text=label, variable=hc_flags[key]).pack(anchor="w", padx=40, pady=2)
+
+        # Presets
+        pf = tabs["presets"]
+        section(pf, "Preset configurations", "Preset hanya mengganti konfigurasi operasional; semua folder output dan lokasi data tetap aman.")
+        builtin = core.preset_catalog(self.cfg)
+        custom = self.cfg.get("custom_presets", {}) or {}
+        preset_names = list(builtin) + [x for x in custom if x not in builtin]
+        preset_var = tk.StringVar(value=self.cfg.get("active_preset", "Default (Legacy Workflow)"))
+        preset_row = tk.Frame(pf, bg=SURFACE); preset_row.pack(fill="x", padx=16, pady=8)
+        ttk.Combobox(preset_row, textvariable=preset_var, values=preset_names, state="readonly", width=32).pack(side="left")
+        def load_selected_preset():
+            name = preset_var.get()
+            try:
+                self.cfg = core.apply_preset(self.cfg, name)
+                self.mode_var.set(self.cfg.get("check_mode", "quick"))
+                self.path_var.set(self.cfg.get("data_root", ""))
+                core.save_config(self.cfg)
+                win.destroy()
+                self.open_settings(first_run=first_run)
+            except Exception as exc:
+                messagebox.showerror("Preset", str(exc), parent=win)
+        self._button(preset_row, "APPLY PRESET", load_selected_preset, dark=True).pack(side="left", padx=8)
+        save_row = tk.Frame(pf, bg=SURFACE); save_row.pack(fill="x", padx=16, pady=8)
+        preset_name = tk.StringVar()
+        ttk.Entry(save_row, textvariable=preset_name, width=34).pack(side="left")
+        def save_preset():
+            name = preset_name.get().strip()
+            if not name:
+                messagebox.showwarning("Preset", "Masukkan nama preset.", parent=win); return
+            if name in builtin:
+                messagebox.showwarning("Preset", "Nama tersebut dipakai preset bawaan.", parent=win); return
+            try:
+                shifts = [[b.get(), c.get(), a.get(), int(d.get())] for a,b,c,d in shift_rows]
+                core.validate_shifts(shifts) if mode_var.get() != "none" else None
+                activities = {}
+                for line in activity_text.get("1.0", "end").splitlines():
+                    if "|" in line:
+                        canon, aliases = line.split("|", 1)
+                        canon = canon.strip()
+                        if canon:
+                            activities[canon] = [x.strip() for x in aliases.split(",") if x.strip()]
+                snapshot = {"shift_mode": mode_var.get(), "shifts": shifts, "check_mode": op_vars["check_mode"].get(), "qc": op_vars["qc"].get(),
+                            "supervisor": op_vars["supervisor"].get(), "activities": activities,
+                            "hand_check": {k: v.get() for k,v in hc_vars.items()} |
+                                          {"rule": hc_rule.get(), **{k:v.get() for k,v in hc_flags.items()}}}
+                self.cfg.setdefault("custom_presets", {})[name] = snapshot
+                self.cfg["active_preset"] = name
+                core.save_config(self.cfg)
+                preset_names.append(name); preset_var.set(name)
+                messagebox.showinfo("Preset", f"Preset '{name}' disimpan.", parent=win)
+            except Exception as exc:
+                messagebox.showerror("Preset", str(exc), parent=win)
+        self._button(save_row, "SAVE CURRENT AS PRESET", save_preset, dark=False).pack(side="left", padx=8)
+        tk.Label(pf, text="Preset bawaan: Default (Legacy Workflow), No Shift, Morning Shift, Full Day Operations.",
+                 bg=SURFACE, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=16, pady=12)
+
+        # Developer Mode: JSON editor is hidden unless explicitly enabled.
+        developer_var = tk.BooleanVar(value=False)
+        developer_tab = tk.Frame(book, bg=SURFACE)
+        def toggle_developer():
+            if developer_var.get():
+                if str(developer_tab) not in book.tabs():
+                    book.add(developer_tab, text="Developer")
+                if not hasattr(self, "_dev_json_text") or not self._dev_json_text.winfo_exists():
+                    self._dev_json_text = tk.Text(developer_tab, wrap="none", font=("Consolas", 9))
+                    self._dev_json_text.pack(fill="both", expand=True, padx=12, pady=12)
+                    keys = ["shift_mode", "shifts", "check_mode", "qc", "supervisor", "activities", "hand_check"]
+                    self._dev_json_text.insert("1.0", json.dumps({k:self.cfg.get(k) for k in keys}, indent=2, ensure_ascii=False))
+            elif str(developer_tab) in book.tabs():
+                book.forget(developer_tab)
+        ttk.Checkbutton(win, text="Developer Mode (JSON editor / advanced diagnostics)",
+                        variable=developer_var, command=toggle_developer).pack(anchor="w", padx=20, pady=(0, 8))
+
         def save():
             try:
-                advanced = json.loads(txt.get("1.0", "end"))
-                # Advanced JSON only contains operational settings; apply it first so
-                # the four explicit folder pickers always win if pasted JSON has path keys.
-                self.cfg.update(advanced)
-                # Folder tujuan boleh belum ada. Buat otomatis dan uji izin tulis.
+                # UI row order is [name, start, end, number]; core schema remains [start, end, label, number].
+                shifts = [[start.get().strip(), end.get().strip(), name.get().strip(), int(number.get())]
+                          for name, start, end, number in shift_rows]
+                if mode_var.get() != "none":
+                    core.validate_shifts(shifts)
+                activities = {}
+                for line in activity_text.get("1.0", "end").splitlines():
+                    if "|" in line:
+                        canon, aliases = line.split("|", 1)
+                        canon = canon.strip()
+                        if canon:
+                            activities[canon] = [x.strip() for x in aliases.split(",") if x.strip()]
+                if not activities:
+                    raise ValueError("Minimal satu aktivitas/ruangan harus tersedia.")
+                new_cfg = dict(self.cfg)
+                new_cfg.update({"config_version": 2, "shift_mode": mode_var.get(), "shifts": shifts,
+                                "check_mode": op_vars["check_mode"].get(),
+                                "qc": op_vars["qc"].get().strip(), "supervisor": op_vars["supervisor"].get().strip(),
+                                "activities": activities,
+                                "hand_check": {k: v.get() for k,v in hc_vars.items()} |
+                                              {"rule": hc_rule.get(), **{k:v.get() for k,v in hc_flags.items()}}})
+                if developer_var.get() and hasattr(self, "_dev_json_text"):
+                    advanced = json.loads(self._dev_json_text.get("1.0", "end"))
+                    for key in ("shift_mode", "shifts", "check_mode", "qc", "supervisor", "activities", "hand_check"):
+                        if key in advanced:
+                            new_cfg[key] = advanced[key]
+                    if new_cfg.get("shift_mode") != "none":
+                        core.validate_shifts(new_cfg.get("shifts", []))
                 for key, var in vars_.items():
-                    self.cfg[key] = core.prepare_output_dir(var.get())
-                excel_path = os.path.join(self.cfg["excel_root"], excel_name)
-                self.cfg["excel_path"] = excel_path  # legacy compatibility for older builds
-                core.save_config(self.cfg)
-                messagebox.showinfo("Initial Setup" if first_run else "Preferences",
-                    "Setup awal berhasil disimpan. ZYWtool siap digunakan.\n\n" if first_run else "Folder Preferences berhasil disimpan.\n\n"
-                    f"Workbook otomatis: {excel_path}\n"
-                    f"Preview: {self.cfg['preview_root']}\n"
-                    f"Hand Check: {self.cfg['hand_check_root']}\reports\n"
-                    f"Organized: {self.cfg['organized_root']}", parent=win)
+                    if key in ("data_root", "excel_filename"):
+                        raw = var.get().strip()
+                        if key == "excel_filename":
+                            raw = os.path.basename(raw) or "ZYW_Rekap.xlsx"
+                            if not raw.lower().endswith((".xlsx", ".xlsm")):
+                                raw += ".xlsx"
+                        new_cfg[key] = (os.path.abspath(os.path.expanduser(raw))
+                                        if key == "data_root" and raw else raw)
+                    else:
+                        new_cfg[key] = core.prepare_output_dir(var.get())
+                excel_name = new_cfg["excel_filename"]
+                excel_path = os.path.join(new_cfg["excel_root"], excel_name)
+                new_cfg["excel_path"] = excel_path
+                core.save_config(new_cfg)
+                self.cfg = new_cfg
+                self.mode_var.set(new_cfg.get("check_mode", "quick"))
+                self.path_var.set(new_cfg.get("data_root", ""))
+                messagebox.showinfo("Preferences", "Pengaturan berhasil disimpan.", parent=win)
                 win.destroy()
-            except Exception as e:
-                messagebox.showerror("Preferences", f"Pengaturan tidak valid:\n{e}", parent=win)
+            except Exception as exc:
+                messagebox.showerror("Preferences", f"Pengaturan tidak valid:\n{exc}", parent=win)
         self._button(win, "SAVE PREFERENCES", save, dark=True).pack(anchor="e", padx=18, pady=(0, 16))
 
 if __name__ == "__main__":

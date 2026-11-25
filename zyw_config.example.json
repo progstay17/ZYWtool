@@ -64,6 +64,10 @@
   "preview_root": "",
   "hand_check_root": "",
   "organized_root": "",
-  "data_root": ""
+  "data_root": "",
+  "config_version": 2,
+  "check_mode": "quick",
+  "shift_mode": "enabled",
+  "active_preset": "Default (Legacy Workflow)",
+  "custom_presets": {}
 }
-

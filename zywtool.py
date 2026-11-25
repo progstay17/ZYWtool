@@ -20,7 +20,7 @@ import handcheck  # noqa: E402
 import jobs  # noqa: E402
 import preset_io  # noqa: E402
 
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 
 BG = "#F3F4F6"
 SURFACE = "#FFFFFF"

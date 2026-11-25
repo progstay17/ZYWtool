@@ -18,7 +18,7 @@ import zyw_core as core  # noqa: E402
 import handcheck  # noqa: E402
 import jobs  # noqa: E402
 
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 
 BG = "#F3F4F6"
 SURFACE = "#FFFFFF"

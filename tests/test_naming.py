@@ -32,6 +32,17 @@ def test_scan_json_detects_nested_objects_and_array_items(tmp_path):
     assert naming._read_path(json.loads(path.read_text()), "recorders[0].device.id") == "ZYW003"
 
 
+def test_scan_json_supports_top_level_arrays_as_multiple_records(tmp_path):
+    path = tmp_path / "records.json"
+    path.write_text(json.dumps([
+        {"task": "ZYW003 Kitchen", "meta": {"site": "MM3107"}},
+        {"task": "ZYW007 Bedroom", "meta": {"site": "MM3108"}},
+    ]), encoding="utf-8")
+    paths = {item["path"] for item in naming.scan_json_file(path)}
+    assert "task" in paths
+    assert "meta.site" in paths
+
+
 def test_no_shift_omits_session_token_without_s0():
     metadata = {
         "start_time_unix": 1795651200,

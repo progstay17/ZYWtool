@@ -62,7 +62,10 @@ def scan_json_file(path):
         raise ValueError(f"JSON tidak bisa dibaca: {exc}") from exc
     if not isinstance(data, (dict, list)):
         raise ValueError("JSON harus berupa object atau array.")
-    fields = _flatten(data)
+    # A top-level list represents multiple records; paths are relative to each record.
+    # Nested arrays inside a record still retain their [0] sample path.
+    sample = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else data
+    fields = _flatten(sample)
     if not fields:
         raise ValueError("Tidak ditemukan field di dalam JSON.")
     return [{"path": key, "sample": value, "type": type(value).__name__}

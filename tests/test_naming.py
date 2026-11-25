@@ -200,6 +200,19 @@ def test_variable_dependency_cycle_is_rejected():
         raise AssertionError("Dependency cycle should fail")
 
 
+def test_validate_naming_config_rejects_dependency_cycles_before_save():
+    config = {"template": "{A}", "variables": [
+        {"name": "A", "source": "var:B"},
+        {"name": "B", "source": "var:A"},
+    ]}
+    try:
+        naming.validate_naming_config(config)
+    except ValueError as exc:
+        assert "cycle" in str(exc).lower()
+    else:
+        raise AssertionError("Dependency cycle should be rejected during validation")
+
+
 def test_required_variable_fails_when_source_is_empty():
     session = make_session({})
     cfg = {"naming": {

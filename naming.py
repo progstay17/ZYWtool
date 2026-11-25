@@ -366,8 +366,28 @@ def validate_naming_config(config):
         raise ValueError("Template nama terlalu panjang.")
     if re.search(r"\{[^{}]*\}", re.sub(r"\{[A-Za-z][A-Za-z0-9_]*\}", "", template)):
         raise ValueError("Template memiliki placeholder yang tidak valid.")
-    validate_variables(config.get("variables", []) or [])
-    for variable in config.get("variables", []) or []:
+    variables = config.get("variables", []) or []
+    validate_variables(variables)
+    definitions = {str(item["name"]).strip().upper(): item for item in variables}
+    visiting, visited = set(), set()
+
+    def visit(name):
+        if name in visiting:
+            raise ValueError(f"Dependency cycle terdeteksi pada variable {name}.")
+        if name in visited:
+            return
+        visiting.add(name)
+        source = str(definitions[name].get("source", "")).strip()
+        if source.startswith("var:"):
+            dependency = source[4:].strip().upper()
+            if dependency in definitions:
+                visit(dependency)
+        visiting.remove(name)
+        visited.add(name)
+
+    for name in definitions:
+        visit(name)
+    for variable in variables:
         for operation in variable.get("operations", []) or []:
             _validate_operation(operation)
     return True

@@ -61,16 +61,13 @@ def _read_path(data, path):
     if not path:
         return None
     current = data
-    for part in re.split(r"\.(?![^\[]*\])", str(path)):
-        match = re.fullmatch(r"([^\[]+)(?:\[(\d+)\])?", part)
-        if not match:
-            return None
-        key, index = match.groups()
-        if isinstance(current, dict):
+    parts = re.findall(r"([^.\\[\\]]+)|\\[(\\d+)\\]", str(path))
+    for key, index in parts:
+        if key:
+            if not isinstance(current, dict):
+                return None
             current = current.get(key)
         else:
-            return None
-        if index is not None:
             if not isinstance(current, list) or int(index) >= len(current):
                 return None
             current = current[int(index)]
@@ -159,7 +156,7 @@ def build_folder_name(session, cfg):
         derived = _derived_value(token, metadata, session, cfg)
         value = mapped if mapped not in (None, "") else derived
         if token == "DATE":
-            value = _date_value(value, session)
+            value = _date_value(value, None if mapped not in (None, "") else session)
         elif token == "DEVICE_ID" and value:
             match = re.search(r"ZYW\s*0*(\d+)", str(value), re.I)
             if match:

@@ -605,19 +605,30 @@ def shift_number(label, cfg):
 
 
 def name_map(sessions, cfg):
-    """Nama folder: yyyymmdd_LOKASI_NamaRecorder_ZYWxxx_S<nomor shift>_Aktivitas
-    contoh: YYYYMMDD_LOKASI_RecorderContoh_DEVICE_S1_Aktivitas
-    Semua sesi dengan kunci yang sama masuk ke folder grup yang sama."""
+    """Build group names, omitting the shift component when no shift is active.
+
+    Shift-based example:
+      YYYYMMDD_LOCATION_RECORDER_DEVICE_S1_ACTIVITY
+    No Shift example:
+      YYYYMMDD_LOCATION_RECORDER_DEVICE_ACTIVITY
+    """
     base = {}
     for s in sessions:
         if not s.start:
             continue
-        base[s.name] = "_".join([
+        parts = [
             s.start.strftime("%Y%m%d"), _alnum(s.location) or "NOLOC",
             _alnum(s.capturer) or "NOREC", s.device_no or "NODEV",
-            f"S{shift_number(s.shift, cfg)}", _alnum(s.activity) or "NOACT"])
+        ]
+        # Never manufacture an S0 segment. No Shift mode, and any session
+        # without a real assigned shift number, omit the shift component.
+        if cfg.get("shift_mode", "enabled") != "none":
+            number = shift_number(s.shift, cfg)
+            if number not in (None, "", 0, "0"):
+                parts.append(f"S{number}")
+        parts.append(_alnum(s.activity) or "NOACT")
+        base[s.name] = "_".join(parts)
     return base
-    return names
 
 
 def resolve_session_path(s, root=None):

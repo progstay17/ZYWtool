@@ -88,3 +88,116 @@ def test_custom_nested_field_mapping_and_template():
     }
 
     assert naming.build_folder_name(session, cfg) == "Justin-MM3107-Livingroom"
+
+
+def test_one_json_source_can_be_split_into_multiple_custom_variables():
+    session = make_session({
+        "task": "ZYW-003 - Kitchen - Cleaning - 02",
+        "location": "MM3107",
+    })
+    cfg = {
+        "shift_mode": "none",
+        "naming": {
+            "template": "{DEVICE_PART}_{ROOM}_{ACTIVITY}_{TASK_NO}",
+            "variables": [
+                {"name": "DEVICE_PART", "source": "json:task", "operations": [
+                    {"op": "split", "delimiter": " - ", "index": 0},
+                    {"op": "replace", "find": "-", "replace": ""},
+                ]},
+                {"name": "ROOM", "source": "json:task", "operations": [
+                    {"op": "split", "delimiter": " - ", "index": 1},
+                    {"op": "case", "mode": "title"},
+                ]},
+                {"name": "ACTIVITY", "source": "json:task", "operations": [
+                    {"op": "split", "delimiter": " - ", "index": 2},
+                    {"op": "case", "mode": "lower"},
+                ]},
+                {"name": "TASK_NO", "source": "json:task", "operations": [
+                    {"op": "split", "delimiter": " - ", "index": 3},
+                    {"op": "prefix", "text": "B"},
+                ]},
+            ],
+        },
+    }
+
+    assert naming.build_folder_name(session, cfg) == "ZYW003_Kitchen_cleaning_B02"
+
+
+def test_custom_variable_can_depend_on_another_custom_variable():
+    session = make_session({"task": "Kitchen"})
+    cfg = {"shift_mode": "none", "naming": {
+        "template": "{ROOM}_{ROOM_LABEL}",
+        "variables": [
+            {"name": "ROOM", "source": "json:task", "operations": [{"op": "case", "mode": "lower"}]},
+            {"name": "ROOM_LABEL", "source": "var:ROOM", "operations": [
+                {"op": "prefix", "text": "Area "}, {"op": "case", "mode": "title"}]},
+        ],
+    }}
+    assert naming.build_folder_name(session, cfg) == "kitchen_Area kitchen"
+
+
+def test_datetime_transform_converts_unix_or_iso_time_to_wita_and_wit():
+    session = make_session({"captured_at": "2026-01-01T17:30:00Z"})
+    cfg = {"shift_mode": "none", "naming": {
+        "template": "{DATE_WITA}_{DATE_WIT}",
+        "variables": [
+            {"name": "DATE_WITA", "source": "json:captured_at", "operations": [
+                {"op": "datetime", "source_timezone": "UTC", "timezone": "Asia/Makassar",
+                 "format": "%Y%m%d_%H%M"}]},
+            {"name": "DATE_WIT", "source": "json:captured_at", "operations": [
+                {"op": "datetime", "source_timezone": "UTC", "timezone": "Asia/Jayapura",
+                 "format": "%Y%m%d_%H%M"}]},
+        ],
+    }}
+    assert naming.build_folder_name(session, cfg) == "20260102_0130_20260102_0230"
+
+
+def test_custom_values_preserve_spaces_and_replace_can_remove_hyphens():
+    session = make_session({"raw": "  EAST-WING  "})
+    cfg = {"naming": {
+        "template": "{ZONE}",
+        "variables": [{"name": "ZONE", "source": "json:raw", "operations": [
+            {"op": "replace", "find": "-", "replace": " "}, {"op": "collapse_spaces"}]}],
+    }}
+    assert naming.build_folder_name(session, cfg) == "EAST WING"
+
+
+def test_disabled_operation_is_preserved_but_not_applied():
+    session = make_session({"raw": "A-B"})
+    cfg = {"naming": {
+        "template": "{VALUE}",
+        "variables": [{"name": "VALUE", "source": "json:raw", "operations": [
+            {"op": "replace", "find": "-", "replace": " ", "enabled": False}]}],
+    }}
+    assert naming.build_folder_name(session, cfg) == "A-B"
+
+
+def test_variable_dependency_cycle_is_rejected():
+    session = make_session({"raw": "x"})
+    cfg = {"naming": {
+        "template": "{A}",
+        "variables": [
+            {"name": "A", "source": "var:B"},
+            {"name": "B", "source": "var:A"},
+        ],
+    }}
+    try:
+        naming.build_folder_name(session, cfg)
+    except ValueError as exc:
+        assert "cycle" in str(exc).lower()
+    else:
+        raise AssertionError("Dependency cycle should fail")
+
+
+def test_required_variable_fails_when_source_is_empty():
+    session = make_session({})
+    cfg = {"naming": {
+        "template": "{REQUIRED}",
+        "variables": [{"name": "REQUIRED", "source": "json:missing", "required": True}],
+    }}
+    try:
+        naming.build_folder_name(session, cfg)
+    except ValueError as exc:
+        assert "wajib" in str(exc).lower()
+    else:
+        raise AssertionError("Missing required variable should fail")

@@ -2,7 +2,6 @@ name: Windows Portable Release
 
 on:
   push:
-    branches: [main]
     tags:
       - "v*"
 
@@ -11,8 +10,6 @@ permissions:
 
 jobs:
   build-and-publish:
-    # Run once from main; the tag event produced below is intentionally skipped.
-    if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -33,7 +30,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $notes = @'
-          ## ZYWtool v1.0.9
+          ## ZYWtool portable release
 
           ### What's new
           - GUI-first Preferences for shift schedules, operational defaults, activity aliases and Hand Check.
@@ -55,4 +52,4 @@ jobs:
           - Windows portable build and ZIP integrity check.
           - GUI Preferences smoke test.
           '@
-          gh release create "v1.0.9" ".\release\ZYWtool-Windows-Portable.zip" --target "$env:GITHUB_SHA" --title "ZYWtool v1.0.9 - Windows Portable" --notes $notes
+          gh release create "$env:GITHUB_REF_NAME" ".\release\ZYWtool-Windows-Portable.zip" --target "$env:GITHUB_SHA" --title "ZYWtool $env:GITHUB_REF_NAME - Windows Portable" --notes $notes

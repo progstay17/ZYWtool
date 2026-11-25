@@ -14,7 +14,7 @@ DEFAULT_FIELD_MAP = {
     "PERSON_NAME": "capturer",
     "DEVICE_ID": "task",
     "SESSION": "",
-    "ACTIVITY": "task",
+    "ACTIVITY": "",
 }
 
 
@@ -128,7 +128,12 @@ def _derived_value(token, metadata, session, cfg):
         activity = getattr(session, "activity", "")
         if activity:
             return activity
-        return metadata.get("activity") or task
+        if metadata.get("activity"):
+            return metadata["activity"]
+        cleaned = re.sub(r"(?i)\\bcleaning\\b", "", task)
+        cleaned = re.sub(r"(?i)\\bZYW\\s*\\d+\\b", "", cleaned)
+        cleaned = re.sub(r"\\(\\s*\\d+\\s*\\)", "", cleaned)
+        return " ".join(cleaned.split())
     if token == "SESSION":
         if (cfg or {}).get("shift_mode", "enabled") == "none":
             return ""

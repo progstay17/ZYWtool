@@ -826,6 +826,7 @@ class App:
                         values=(item["type"], sample[:97] + "..." if len(sample) > 100 else sample))
                 refresh_mapping_choices()
                 scan_status.set(f"{len(detected_fields)} field ditemukan.")
+                update_naming_preview()
             except Exception as exc:
                 messagebox.showerror("JSON Variable Scanner", str(exc), parent=win)
                 scan_status.set("Scan gagal. Periksa file JSON.")
@@ -856,6 +857,39 @@ class App:
         self._button(template_row, "ADD TOKEN", insert_naming_token).pack(side="left")
         tk.Label(nf, text="Default: {DATE}_{LOCATION_CODE}_{PERSON_NAME}_{DEVICE_ID}_{SESSION}_{ACTIVITY}",
                  bg=SURFACE, fg=MUTED, font=("Segoe UI", 8)).pack(anchor="w", padx=16, pady=(0, 8))
+
+        naming_preview_var = tk.StringVar(value="Preview akan muncul setelah JSON dipindai.")
+        tk.Label(nf, textvariable=naming_preview_var, bg="#F7F8FA", fg=INK,
+                 font=("Consolas", 9), anchor="w", justify="left", wraplength=900,
+                 padx=10, pady=8).pack(fill="x", padx=16, pady=(0, 10))
+        def update_naming_preview(*_args):
+            if not detected_fields or not os.path.isfile(source_json_var.get()):
+                naming_preview_var.set("Preview akan muncul setelah JSON dipindai.")
+                return
+            try:
+                with open(source_json_var.get(), encoding="utf-8-sig") as stream:
+                    sample = json.load(stream)
+                meta = sample if isinstance(sample, dict) else (sample[0] if sample and isinstance(sample[0], dict) else {})
+                task = str(meta.get("task") or "")
+                device_no, activity = core._task_fields(task)
+                shift_label = ""
+                if mode_var.get() != "none" and self.cfg.get("shifts"):
+                    shift_label = str(self.cfg["shifts"][0][2])
+                field_map = {k: ("" if v.get() == "(Auto / derived)" else v.get())
+                             for k, v in map_vars.items()}
+                preview_cfg = dict(self.cfg)
+                preview_cfg["shift_mode"] = mode_var.get()
+                preview_cfg["naming"] = {"template": template_var.get(), "field_map": field_map}
+                from types import SimpleNamespace
+                fake = SimpleNamespace(metadata=meta, start=None, location=meta.get("location", ""),
+                    capturer=meta.get("capturer", ""), task=task, device_no=device_no,
+                    activity=activity, shift=shift_label)
+                naming_preview_var.set("Preview: " + core.naming.build_folder_name(fake, preview_cfg))
+            except Exception as exc:
+                naming_preview_var.set("Preview belum dapat dibuat: " + str(exc))
+        template_var.trace_add("write", update_naming_preview)
+        for _token_var in map_vars.values():
+            _token_var.trace_add("write", update_naming_preview)
 
         # Shift manager: selectable 24-hour time controls, editable labels and ordering.
         sf = tabs["shifts"]

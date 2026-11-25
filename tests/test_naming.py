@@ -98,7 +98,7 @@ def test_one_json_source_can_be_split_into_multiple_custom_variables():
     cfg = {
         "shift_mode": "none",
         "naming": {
-            "template": "{DEVICE_PART}_{ROOM}_{ACTIVITY}_{TASK_NO}",
+            "template": "{DEVICE_PART}_{ROOM}_{ACTIVITY_NAME}_{TASK_NO}",
             "variables": [
                 {"name": "DEVICE_PART", "source": "json:task", "operations": [
                     {"op": "split", "delimiter": " - ", "index": 0},
@@ -108,7 +108,7 @@ def test_one_json_source_can_be_split_into_multiple_custom_variables():
                     {"op": "split", "delimiter": " - ", "index": 1},
                     {"op": "case", "mode": "title"},
                 ]},
-                {"name": "ACTIVITY", "source": "json:task", "operations": [
+                {"name": "ACTIVITY_NAME", "source": "json:task", "operations": [
                     {"op": "split", "delimiter": " - ", "index": 2},
                     {"op": "case", "mode": "lower"},
                 ]},
@@ -133,7 +133,7 @@ def test_custom_variable_can_depend_on_another_custom_variable():
                 {"op": "prefix", "text": "Area "}, {"op": "case", "mode": "title"}]},
         ],
     }}
-    assert naming.build_folder_name(session, cfg) == "kitchen_Area kitchen"
+    assert naming.build_folder_name(session, cfg) == "kitchen_Area Kitchen"
 
 
 def test_datetime_transform_converts_unix_or_iso_time_to_wita_and_wit():

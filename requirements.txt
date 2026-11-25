@@ -6,5 +6,4 @@ mcap==1.6.0
 av==19.0.2
 PyInstaller==6.22.3
 matplotlib==3.11.2
-tzdata==2026.6
 

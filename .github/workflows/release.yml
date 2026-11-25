@@ -28,18 +28,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $notes = @'
-          ## ZYWtool v1.0.7
+          ## ZYWtool v1.0.8
 
           ### What's new
-          - GUI-first Preferences for shift schedules, operational defaults, activity aliases, Hand Check and configurable folder naming.
-          - 24-hour selectable Shift Manager with add/remove/reorder, overlap validation and overnight support.
-          - Explicit No Shift mode; the folder-name template omits the SESSION token entirely (never `S0`).
-          - Existing v1.0.5 operational settings migrate into the Default (Legacy Workflow) preset.
-          - Built-in presets: Default (Legacy Workflow), No Shift, Morning Shift and Full Day Operations.
-          - JSON editor is hidden in Developer Mode.
-          - New Naming Convention tab: browse and scan a sample `session.json`, detect nested JSON fields and array values, map fields, customize token order/separators, and preview folder names live.
-          - Naming templates and JSON field mappings are saved in Preferences and custom presets.
-          - Existing scan, audit, explorer, Arrange/Undo, Preview, Hand Check, background jobs and Excel workflows remain available.
+          - Visual naming pipeline with dynamic custom variables, JSON-path sources, variable dependencies, split/extract, ordered transforms and editable steps.
+          - Text transforms include replace/remove, trim, whitespace normalization, case conversion, prefixes and suffixes.
+          - Time transforms support Unix timestamps and ISO values, IANA timezone conversion (WIB/WITA/WIT or custom zones), and configurable output formats.
+          - Multi-record filename preview supports JSON arrays and shows per-record failures before Arrange.
+          - Naming variable and transform controls support enable/disable, reorder, edit, remove and reset.
+          - Export the built-in Default (Legacy Workflow) preset or selected presets; import portable .zywpreset.json files without overwriting local data/output paths.
+          - Existing naming templates, field mappings, No Shift behavior, scan, audit, Arrange/Undo, Preview, Hand Check, background jobs and Excel workflows remain compatible.
 
           ### Portable and permissions
           - Bundled Python runtime and application libraries.
@@ -52,4 +50,4 @@ jobs:
           - Windows portable build and ZIP integrity check.
           - GUI Preferences smoke test.
           '@
-          gh release create "v1.0.7" ".\release\ZYWtool-Windows-Portable.zip" --title "ZYWtool v1.0.7 - Windows Portable" --notes $notes
+          gh release create "v1.0.8" ".\release\ZYWtool-Windows-Portable.zip" --title "ZYWtool v1.0.8 - Windows Portable" --notes $notes

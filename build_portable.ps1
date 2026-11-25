@@ -17,7 +17,8 @@ New-Item -ItemType Directory -Force -Path $Build, $Release | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
 Copy-Item -Recurse -Force "$Build\main\ZYWtool\*" $Release
 Copy-Item -Force "$Root\README.md", "$Root\LICENSE", "$Root\MODEL.md", "$Root\THIRD_PARTY_NOTICES.md" $ReleaseRoot
-Set-Content -Path (Join-Path $ReleaseRoot "VERSION.txt") -Value "1.0.9" -Encoding ascii
+$PortableVersion = if ($env:GITHUB_REF_NAME -match "^v(.+)$") { $Matches[1] } else { "1.0.9" }
+Set-Content -Path (Join-Path $ReleaseRoot "VERSION.txt") -Value $PortableVersion -Encoding ascii
 $Archive = Join-Path $ReleaseRoot "ZYWtool-Windows-Portable.zip"
 Compress-Archive -Path (Join-Path $ReleaseRoot "README.md"), (Join-Path $ReleaseRoot "LICENSE"), (Join-Path $ReleaseRoot "MODEL.md"), (Join-Path $ReleaseRoot "THIRD_PARTY_NOTICES.md"), (Join-Path $ReleaseRoot "VERSION.txt"), $Release -DestinationPath $Archive -CompressionLevel Optimal
 if ($LASTEXITCODE -ne 0) { throw "Portable ZIP creation failed with exit code $LASTEXITCODE" }

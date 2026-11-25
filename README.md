@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.7-2563eb">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.8-2563eb">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2F11-0f766e">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776ab">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-16a34a">

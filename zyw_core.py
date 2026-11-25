@@ -93,6 +93,8 @@ def load_config():
         if isinstance(item, list) and len(item) >= 3 and item[2] in legacy_labels:
             item[2] = legacy_labels[item[2]]
     cfg.setdefault("custom_presets", {})
+    cfg.setdefault("naming", {"source_json": "", "template": naming.DEFAULT_TEMPLATE,
+                              "field_map": dict(naming.DEFAULT_FIELD_MAP)})
     # Preserve the existing v1.0.5 operational setup as the users legacy default preset.
     if loaded and "active_preset" not in loaded:
         cfg["custom_presets"]["Default (Legacy Workflow)"] = {

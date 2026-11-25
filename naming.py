@@ -61,7 +61,7 @@ def scan_json_file(path):
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"JSON tidak bisa dibaca: {exc}") from exc
     if not isinstance(data, (dict, list)):
-        raise ValueError("JSON harus berupa object atau array.")
+        raise TypeError("JSON harus berupa object atau array.")
     # A top-level list represents multiple records; paths are relative to each record.
     # Nested arrays inside a record still retain their [0] sample path.
     sample = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else data
@@ -119,7 +119,7 @@ def _epoch_datetime(value):
         stamp /= 1e6
     elif absolute >= 1e11:
         stamp /= 1e3
-    return dt.datetime.fromtimestamp(stamp, tz=dt.timezone.utc)
+    return dt.datetime.fromtimestamp(stamp, tz=dt.UTC)
 
 
 def _parse_datetime(value, source_timezone="UTC"):
@@ -132,7 +132,7 @@ def _parse_datetime(value, source_timezone="UTC"):
         return _epoch_datetime(int(raw))
     parsed = None
     try:
-        parsed = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        parsed = dt.datetime.fromisoformat(raw)
     except ValueError:
         for fmt in ("%Y%m%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
             try:
@@ -169,7 +169,7 @@ def _derived_value(token, metadata, session, cfg):
         device_no = getattr(session, "device_no", "")
         if device_no:
             return device_no
-        match = re.search(r"ZYW\s*0*(\d+)", task, re.I)
+        match = re.search(r"ZYW\s*0*(\d+)", task, re.IGNORECASE)
         return f"ZYW{int(match.group(1)):03d}" if match else metadata.get("device_id", "")
     if token == "ACTIVITY":
         activity = getattr(session, "activity", "")
@@ -266,11 +266,11 @@ def _apply_operation(value, operation):
 def validate_variables(variables):
     """Validate custom variables before saving or importing a naming profile."""
     if not isinstance(variables, list):
-        raise ValueError("Custom variables harus berupa list.")
+        raise TypeError("Custom variables harus berupa list.")
     names = set()
     for index, variable in enumerate(variables, 1):
         if not isinstance(variable, dict):
-            raise ValueError(f"Variable #{index} harus berupa object.")
+            raise TypeError(f"Variable #{index} harus berupa object.")
         name = str(variable.get("name", "")).strip().upper()
         if not VARIABLE_NAME_RE.fullmatch(name):
             raise ValueError(f"Nama variable '{name}' tidak valid.")
@@ -284,7 +284,7 @@ def validate_variables(variables):
             raise ValueError(f"Source untuk {name} belum diisi.")
         operations = variable.get("operations", [])
         if not isinstance(operations, list):
-            raise ValueError(f"Operations untuk {name} harus berupa list.")
+            raise TypeError(f"Operations untuk {name} harus berupa list.")
         for operation in operations:
             if not isinstance(operation, dict) or operation.get("op") not in ALLOWED_OPERATIONS:
                 raise ValueError(f"Operasi untuk {name} tidak valid.")
@@ -306,7 +306,7 @@ def evaluate_variables(session, cfg):
             use_session_date = mapped in (None, "") or mapped == metadata.get("start_time_unix")
             value = _date_value(value, session if use_session_date else None)
         elif token == "DEVICE_ID" and value:
-            match = re.search(r"ZYW\s*0*(\d+)", str(value), re.I)
+            match = re.search(r"ZYW\s*0*(\d+)", str(value), re.IGNORECASE)
             if match:
                 value = f"ZYW{int(match.group(1)):03d}"
         elif token == "SESSION" and (cfg or {}).get("shift_mode", "enabled") == "none":
@@ -339,7 +339,7 @@ def evaluate_variables(session, cfg):
             elif source.startswith("literal:"):
                 result = source[8:]
             else:
-                path = source[5:] if source.startswith("json:") else source
+                path = source.removeprefix("json:")
                 result = _read_path(metadata, path)
             if result in (None, ""):
                 result = definition.get("fallback", "")
@@ -360,7 +360,7 @@ def evaluate_variables(session, cfg):
 def validate_naming_config(config):
     """Validate a naming profile, including templates, variables and operations."""
     if not isinstance(config, dict):
-        raise ValueError("Naming profile harus berupa object.")
+        raise TypeError("Naming profile harus berupa object.")
     template = str(config.get("template") or DEFAULT_TEMPLATE)
     if len(template) > 500:
         raise ValueError("Template nama terlalu panjang.")

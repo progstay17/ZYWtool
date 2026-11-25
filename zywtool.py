@@ -1066,7 +1066,6 @@ class App:
                     core.naming.validate_naming_config({"template": "{" + definition["name"] + "}",
                                                          "variables": [definition]})
                     if index is None:
-                        if index is None:
                         custom_variables.append(definition)
                     else:
                         custom_variables[index] = definition

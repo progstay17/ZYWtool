@@ -77,11 +77,8 @@ def _read_path(data, path):
 
 
 def _safe(value):
-    value = str(value or "").strip()
-    value = re.sub(r"[<>:\"/\\|?*\x00-\x1f]", "", value)
-    value = re.sub(r"\s+", "", value)
-    value = re.sub(r"_+", "_", value).strip(" ._")
-    return value
+    # Keep the historical ZYWtool convention: each metadata component is alphanumeric.
+    return re.sub(r"[^A-Za-z0-9]", "", str(value or "").strip())
 
 
 def _date_value(value, session):
@@ -156,7 +153,8 @@ def build_folder_name(session, cfg):
         derived = _derived_value(token, metadata, session, cfg)
         value = mapped if mapped not in (None, "") else derived
         if token == "DATE":
-            value = _date_value(value, None if mapped not in (None, "") else session)
+            use_session_date = mapped in (None, "") or mapped == metadata.get("start_time_unix")
+            value = _date_value(value, session if use_session_date else None)
         elif token == "DEVICE_ID" and value:
             match = re.search(r"ZYW\s*0*(\d+)", str(value), re.I)
             if match:

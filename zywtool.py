@@ -895,6 +895,8 @@ class App:
         sf = tabs["shifts"]
         section(sf, "Shift mode", "Pilih Shift-based untuk pembagian shift, atau No Shift bila operasional tidak memakai shift.")
         mode_var = tk.StringVar(value=self.cfg.get("shift_mode", "enabled"))
+        mode_var.trace_add("write", lambda *_: update_naming_preview())
+        update_naming_preview()
         mode_box = tk.Frame(sf, bg=SURFACE)
         mode_box.pack(fill="x", padx=16, pady=(2, 8))
         ttk.Radiobutton(mode_box, text="Shift-based", variable=mode_var, value="enabled").pack(side="left", padx=(0, 24))
@@ -1025,6 +1027,8 @@ class App:
                             activities[canon] = [x.strip() for x in aliases.split(",") if x.strip()]
                 snapshot = {"shift_mode": mode_var.get(), "shifts": shifts, "check_mode": op_vars["check_mode"].get(), "qc": op_vars["qc"].get(),
                             "supervisor": op_vars["supervisor"].get(), "activities": activities,
+                            "naming": {"source_json": source_json_var.get().strip(), "template": template_var.get().strip(),
+                                       "field_map": {k: ("" if v.get() == "(Auto / derived)" else v.get()) for k, v in map_vars.items()}},
                             "hand_check": {k: v.get() for k,v in hc_vars.items()} |
                                           {"rule": hc_rule.get(), **{k:v.get() for k,v in hc_flags.items()}}}
                 self.cfg.setdefault("custom_presets", {})[name] = snapshot

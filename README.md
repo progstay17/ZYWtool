@@ -35,7 +35,9 @@ ZYWtool is a desktop toolkit for recording operations teams working with MCAP se
 - **Transparent scan audit** — partial results, missing metadata, warnings and errors are surfaced instead of being hidden.
 - **Storage accounting** — folder sizes are calculated recursively.
 - **Operational recap** — session explorer, shift/activity mapping, recording health checks and Excel export.
-- **Configurable folder naming** — scan a sample `session.json`, map nested JSON fields, customize token order and separators, and preview the Arrange folder name in Preferences. No Shift omits the shift token entirely (no `S0`).
+- **Visual naming pipeline** — scan a sample `session.json`, split one source field into multiple custom variables, chain variables, and apply ordered text/date/time transformations. Each variable and step can be enabled, disabled, reordered, edited, deleted, or reset. Preview the resolved variables and final folder name before Arrange. No Shift omits the shift token entirely (no `S0`).
+- **Timezone-aware naming** — convert Unix timestamps or ISO date strings using IANA zones such as `Asia/Jakarta` (WIB), `Asia/Makassar` (WITA), and `Asia/Jayapura` (WIT), then apply a custom date/time format. The portable build includes pinned `tzdata` for Windows.
+- **Portable preset backup** — export the built-in Default (Legacy Workflow) preset or any selected preset to a versioned `.zywpreset.json` file, and import it later. Preset exports omit local output/data paths.
 - **Safer file operations** — Arrange and Undo Arrange are available in the GUI; undo validates paths and refuses unsafe overwrites.
 - **Visual inspection** — optional MediaPipe Hand Check, HTML reports and up to 30 timeline snapshots in Preview.
 - **Background jobs** — long-running tasks are managed without blocking the main interface.

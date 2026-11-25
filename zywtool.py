@@ -716,7 +716,7 @@ class App:
         book = ttk.Notebook(win)
         book.pack(fill="both", expand=True, padx=18, pady=(0, 12))
         tabs = {}
-        for key, title in (("paths", "Folders"), ("shifts", "Shift Manager"),
+        for key, title in (("paths", "Folders"), ("naming", "Naming Convention"), ("shifts", "Shift Manager"),
                            ("ops", "Operational"), ("hand", "Hand Check"), ("presets", "Presets")):
             frame = tk.Frame(book, bg=SURFACE)
             book.add(frame, text=title)
@@ -760,6 +760,102 @@ class App:
         path_row(tabs["paths"], "Hand Check output", "hand_check_root", "Laporan HTML Hand Check.")
         path_row(tabs["paths"], "Organized folders", "organized_root", "Tujuan Arrange; terpisah dari folder rekaman asli.")
         path_row(tabs["paths"], "Data source (optional)", "data_root", "Folder sumber default untuk pemindaian.")
+
+        # JSON-backed naming convention editor. This scanner is independent of the main MCAP scan.
+        nf = tabs["naming"]
+        naming_cfg = self.cfg.get("naming", {}) or {}
+        section(nf, "JSON variable scanner",
+                "Pilih session.json contoh. Scanner membaca nested object dan array, lalu menampilkan field beserta contoh nilainya.")
+        source_row = tk.Frame(nf, bg=SURFACE)
+        source_row.pack(fill="x", padx=16, pady=6)
+        source_json_var = tk.StringVar(value=str(naming_cfg.get("source_json") or ""))
+        ttk.Entry(source_row, textvariable=source_json_var).pack(side="left", fill="x", expand=True, padx=(0, 8))
+        def browse_naming_json():
+            selected = filedialog.askopenfilename(parent=win, title="Pilih file JSON contoh",
+                initialdir=os.path.dirname(source_json_var.get()) if os.path.isfile(source_json_var.get()) else os.path.expanduser("~"),
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")])
+            if selected:
+                source_json_var.set(os.path.abspath(selected))
+        self._button(source_row, "BROWSE JSON", browse_naming_json).pack(side="left", padx=(0, 8))
+        detected_fields = []
+        fields_tree = ttk.Treeview(nf, columns=("type", "sample"), show="tree headings", height=5)
+        fields_tree.heading("#0", text="JSON FIELD PATH")
+        fields_tree.heading("type", text="TYPE")
+        fields_tree.heading("sample", text="SAMPLE VALUE")
+        fields_tree.column("#0", width=260, minwidth=160)
+        fields_tree.column("type", width=90, stretch=False)
+        fields_tree.column("sample", width=440)
+        fields_tree.pack(fill="both", expand=True, padx=16, pady=(4, 4))
+        scan_status = tk.StringVar(value="Belum ada file JSON yang dipindai.")
+        tk.Label(nf, textvariable=scan_status, bg=SURFACE, fg=MUTED,
+                 font=("Segoe UI", 8)).pack(anchor="w", padx=16, pady=(0, 4))
+        section(nf, "Variable mapping",
+                "Pilih field JSON untuk setiap variabel. Auto memakai metadata sesi ZYWtool; SESSION dihitung dari Shift Manager.")
+        token_labels = [("DATE", "Tanggal"), ("LOCATION_CODE", "Kode lokasi"),
+                        ("PERSON_NAME", "Nama person/recorder"), ("DEVICE_ID", "Device ID"),
+                        ("SESSION", "Shift/session"), ("ACTIVITY", "Aktivitas")]
+        map_vars, map_boxes = {}, {}
+        saved_map = dict(naming_cfg.get("field_map") or {})
+        auto_map = dict(core.naming.DEFAULT_FIELD_MAP)
+        map_wrap = tk.Frame(nf, bg=SURFACE)
+        map_wrap.pack(fill="x", padx=16, pady=(0, 8))
+        for token, label in token_labels:
+            row = tk.Frame(map_wrap, bg=SURFACE)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=label, bg=SURFACE, fg=INK, width=24, anchor="w").pack(side="left")
+            initial = saved_map.get(token) or auto_map.get(token) or ""
+            var = tk.StringVar(value=initial if initial else "(Auto / derived)")
+            map_vars[token] = var
+            box = ttk.Combobox(row, textvariable=var, values=["(Auto / derived)"], state="readonly", width=48)
+            box.pack(side="left", fill="x", expand=True)
+            map_boxes[token] = box
+        def refresh_mapping_choices():
+            choices = ["(Auto / derived)"] + [item["path"] for item in detected_fields]
+            for token, box in map_boxes.items():
+                box.configure(values=choices)
+                if map_vars[token].get() not in choices:
+                    map_vars[token].set("(Auto / derived)")
+        def scan_naming_json():
+            try:
+                detected_fields[:] = core.naming.scan_json_file(source_json_var.get().strip())
+                for item in fields_tree.get_children():
+                    fields_tree.delete(item)
+                for item in detected_fields:
+                    sample = json.dumps(item["sample"], ensure_ascii=False)
+                    fields_tree.insert("", "end", text=item["path"],
+                        values=(item["type"], sample[:97] + "..." if len(sample) > 100 else sample))
+                refresh_mapping_choices()
+                scan_status.set(f"{len(detected_fields)} field ditemukan.")
+            except Exception as exc:
+                messagebox.showerror("JSON Variable Scanner", str(exc), parent=win)
+                scan_status.set("Scan gagal. Periksa file JSON.")
+        self._button(source_row, "SCAN VARIABLES", scan_naming_json, dark=True).pack(side="left")
+        if os.path.isfile(source_json_var.get()):
+            try:
+                detected_fields[:] = core.naming.scan_json_file(source_json_var.get())
+                for item in detected_fields:
+                    sample = json.dumps(item["sample"], ensure_ascii=False)
+                    fields_tree.insert("", "end", text=item["path"],
+                        values=(item["type"], sample[:97] + "..." if len(sample) > 100 else sample))
+                refresh_mapping_choices()
+                scan_status.set(f"{len(detected_fields)} field tersimpan dari scan sebelumnya.")
+            except Exception:
+                pass
+        section(nf, "Folder name template",
+                "Susun ulang token dan separator. Token yang tidak tersedia otomatis dihilangkan.")
+        template_var = tk.StringVar(value=str(naming_cfg.get("template") or core.naming.DEFAULT_TEMPLATE))
+        template_row = tk.Frame(nf, bg=SURFACE)
+        template_row.pack(fill="x", padx=16, pady=(0, 6))
+        ttk.Entry(template_row, textvariable=template_var).pack(side="left", fill="x", expand=True, padx=(0, 8))
+        token_add_var = tk.StringVar(value="DATE")
+        ttk.Combobox(template_row, textvariable=token_add_var, values=list(core.naming.TOKENS),
+                     state="readonly", width=18).pack(side="left", padx=(0, 6))
+        def insert_naming_token():
+            current = template_var.get().strip()
+            template_var.set((current + "_" if current else "") + "{" + token_add_var.get() + "}")
+        self._button(template_row, "ADD TOKEN", insert_naming_token).pack(side="left")
+        tk.Label(nf, text="Default: {DATE}_{LOCATION_CODE}_{PERSON_NAME}_{DEVICE_ID}_{SESSION}_{ACTIVITY}",
+                 bg=SURFACE, fg=MUTED, font=("Segoe UI", 8)).pack(anchor="w", padx=16, pady=(0, 8))
 
         # Shift manager: selectable 24-hour time controls, editable labels and ordering.
         sf = tabs["shifts"]
@@ -946,6 +1042,8 @@ class App:
                                 "check_mode": op_vars["check_mode"].get(),
                                 "qc": op_vars["qc"].get().strip(), "supervisor": op_vars["supervisor"].get().strip(),
                                 "activities": activities,
+                                "naming": {"source_json": source_json_var.get().strip(), "template": template_var.get().strip(),
+                                           "field_map": {k: ("" if v.get() == "(Auto / derived)" else v.get()) for k, v in map_vars.items()}},
                                 "hand_check": {k: v.get() for k,v in hc_vars.items()} |
                                               {"rule": hc_rule.get(), **{k:v.get() for k,v in hc_flags.items()}}})
                 if developer_var.get() and hasattr(self, "_dev_json_text"):

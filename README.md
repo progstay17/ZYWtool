@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.7-2563eb">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.8-2563eb">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2F11-0f766e">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776ab">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-16a34a">
@@ -35,7 +35,9 @@ ZYWtool is a desktop toolkit for recording operations teams working with MCAP se
 - **Transparent scan audit** — partial results, missing metadata, warnings and errors are surfaced instead of being hidden.
 - **Storage accounting** — folder sizes are calculated recursively.
 - **Operational recap** — session explorer, shift/activity mapping, recording health checks and Excel export.
-- **Configurable folder naming** — scan a sample `session.json`, map nested JSON fields, customize token order and separators, and preview the Arrange folder name in Preferences. No Shift omits the shift token entirely (no `S0`).
+- **Visual naming pipeline** — scan a sample `session.json`, split one source field into multiple custom variables, chain variables, and apply ordered text/date/time transformations. Each variable and step can be enabled, disabled, reordered, edited, deleted, or reset. Preview the resolved variables and final folder name before Arrange. No Shift omits the shift token entirely (no `S0`).
+- **Timezone-aware naming** — convert Unix timestamps or ISO date strings using IANA zones such as `Asia/Jakarta` (WIB), `Asia/Makassar` (WITA), and `Asia/Jayapura` (WIT), then apply a custom date/time format. The portable build includes pinned `tzdata` for Windows.
+- **Portable preset backup** — export the built-in Default (Legacy Workflow) preset or any selected preset to a versioned `.zywpreset.json` file, and import it later. Preset exports omit local output/data paths.
 - **Safer file operations** — Arrange and Undo Arrange are available in the GUI; undo validates paths and refuses unsafe overwrites.
 - **Visual inspection** — optional MediaPipe Hand Check, HTML reports and up to 30 timeline snapshots in Preview.
 - **Background jobs** — long-running tasks are managed without blocking the main interface.
@@ -116,6 +118,8 @@ Tests use temporary directories and synthetic fixtures; they do not require oper
 | --- | --- |
 | `zywtool.py` | Main desktop GUI |
 | `zyw_core.py` | Discovery, scanning, organization and Excel logic |
+| `naming.py` | Dynamic naming variables, extraction and transformation pipeline |
+| `preset_io.py` | Path-safe portable preset export/import |
 | `handcheck.py` / `handreport.py` | Hand Check and HTML reporting |
 | `preview_frames.py` | Timeline preview generation |
 | `undo_arrange.py` | Guarded restoration for Arrange operations |

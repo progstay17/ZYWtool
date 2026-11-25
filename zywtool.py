@@ -5,6 +5,7 @@ import os
 import sys
 import subprocess
 import threading
+import datetime as dt
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -17,8 +18,9 @@ if getattr(sys, "frozen", False):
 import zyw_core as core  # noqa: E402
 import handcheck  # noqa: E402
 import jobs  # noqa: E402
+import preset_io  # noqa: E402
 
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 
 BG = "#F3F4F6"
 SURFACE = "#FFFFFF"
@@ -761,8 +763,27 @@ class App:
         path_row(tabs["paths"], "Organized folders", "organized_root", "Tujuan Arrange; terpisah dari folder rekaman asli.")
         path_row(tabs["paths"], "Data source (optional)", "data_root", "Folder sumber default untuk pemindaian.")
 
+        # Keep the expanded naming editor usable in smaller screens.
+        naming_host = tabs["naming"]
+        naming_canvas = tk.Canvas(naming_host, bg=SURFACE, highlightthickness=0)
+        naming_scrollbar = ttk.Scrollbar(naming_host, orient="vertical", command=naming_canvas.yview)
+        naming_scrollbar.pack(side="right", fill="y")
+        naming_canvas.pack(side="left", fill="both", expand=True)
+        naming_canvas.configure(yscrollcommand=naming_scrollbar.set)
+        nf = tk.Frame(naming_canvas, bg=SURFACE)
+        naming_canvas_window = naming_canvas.create_window((0, 0), window=nf, anchor="nw")
+        def _update_naming_scroll_region(_event=None):
+            naming_canvas.configure(scrollregion=naming_canvas.bbox("all"))
+        def _resize_naming_content(event):
+            naming_canvas.itemconfigure(naming_canvas_window, width=event.width)
+        def _naming_mousewheel(event):
+            naming_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        nf.bind("<Configure>", _update_naming_scroll_region)
+        naming_canvas.bind("<Configure>", _resize_naming_content)
+        naming_canvas.bind("<Enter>", lambda _event: naming_canvas.bind_all("<MouseWheel>", _naming_mousewheel))
+        naming_canvas.bind("<Leave>", lambda _event: naming_canvas.unbind_all("<MouseWheel>"))
+
         # JSON-backed naming convention editor. This scanner is independent of the main MCAP scan.
-        nf = tabs["naming"]
         naming_cfg = self.cfg.get("naming", {}) or {}
         section(nf, "JSON variable scanner",
                 "Pilih session.json contoh. Scanner membaca nested object dan array, lalu menampilkan field beserta contoh nilainya.")
@@ -842,6 +863,263 @@ class App:
                 scan_status.set(f"{len(detected_fields)} field tersimpan dari scan sebelumnya.")
             except Exception:
                 pass
+        # Dynamic variables: one JSON source can feed multiple independent derived values.
+        custom_variables = json.loads(json.dumps(naming_cfg.get("variables", []) or []))
+        section(nf, "Dynamic custom variables",
+                "Buat variabel sendiri dari JSON path, built-in token, literal, atau variabel lain. Setiap variabel punya urutan transformasi.")
+        custom_tree = ttk.Treeview(nf, columns=("source", "steps", "status"),
+                                   show="tree headings", height=4)
+        custom_tree.heading("#0", text="VARIABLE")
+        custom_tree.heading("source", text="SOURCE")
+        custom_tree.heading("steps", text="STEPS")
+        custom_tree.heading("status", text="STATUS")
+        custom_tree.column("#0", width=170, minwidth=120)
+        custom_tree.column("source", width=300, minwidth=180)
+        custom_tree.column("steps", width=80, anchor="center", stretch=False)
+        custom_tree.column("status", width=90, anchor="center", stretch=False)
+        custom_tree.pack(fill="both", expand=False, padx=16, pady=(2, 4))
+        def refresh_custom_variable_tree():
+            for iid in custom_tree.get_children():
+                custom_tree.delete(iid)
+            for index, item in enumerate(custom_variables):
+                custom_tree.insert("", "end", iid=str(index), text=item.get("name", ""),
+                    values=(item.get("source", ""),
+                            len(item.get("operations", []) or []),
+                            "ENABLED" if item.get("enabled", True) else "DISABLED"))
+            try:
+                token_box.configure(values=list(core.naming.TOKENS) +
+                                    [item.get("name", "").upper() for item in custom_variables])
+            except NameError:
+                pass
+        def edit_custom_variable(index=None):
+            original = (json.loads(json.dumps(custom_variables[index]))
+                        if index is not None else
+                        {"name": "", "source": "", "enabled": True, "required": False,
+                         "fallback": "", "operations": []})
+            dialog = tk.Toplevel(win)
+            dialog.title("Edit Custom Variable" if index is not None else "Add Custom Variable")
+            dialog.geometry("760x650")
+            dialog.minsize(680, 560)
+            dialog.configure(bg=BG)
+            tk.Label(dialog, text="CUSTOM VARIABLE", bg=BG, fg=INK,
+                     font=("Segoe UI Semibold", 15)).pack(anchor="w", padx=18, pady=(14, 2))
+            tk.Label(dialog, text="Satu sumber dapat dipecah menjadi beberapa variabel. Proses dijalankan berurutan.",
+                     bg=BG, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=(0, 10))
+            form = tk.Frame(dialog, bg=SURFACE)
+            form.pack(fill="x", padx=16, pady=4)
+            name_v = tk.StringVar(value=str(original.get("name", "")))
+            source_v = tk.StringVar(value=str(original.get("source", "")))
+            fallback_v = tk.StringVar(value=str(original.get("fallback", "")))
+            enabled_v = tk.BooleanVar(value=bool(original.get("enabled", True)))
+            required_v = tk.BooleanVar(value=bool(original.get("required", False)))
+            tk.Label(form, text="Variable name", bg=SURFACE, fg=INK, width=18, anchor="w").grid(
+                row=0, column=0, padx=10, pady=7, sticky="w")
+            ttk.Entry(form, textvariable=name_v).grid(row=0, column=1, padx=10, pady=7, sticky="ew")
+            tk.Label(form, text="Source", bg=SURFACE, fg=INK, width=18, anchor="w").grid(
+                row=1, column=0, padx=10, pady=7, sticky="w")
+            source_choices = (["json:" + item["path"] for item in detected_fields] +
+                              ["builtin:" + token for token in core.naming.TOKENS] +
+                              ["var:" + item.get("name", "").upper() for item in custom_variables
+                               if item.get("name", "").upper() != str(original.get("name", "")).upper()])
+            ttk.Combobox(form, textvariable=source_v, values=source_choices, width=58).grid(
+                row=1, column=1, padx=10, pady=7, sticky="ew")
+            tk.Label(form, text="Fallback value", bg=SURFACE, fg=INK, width=18, anchor="w").grid(
+                row=2, column=0, padx=10, pady=7, sticky="w")
+            ttk.Entry(form, textvariable=fallback_v).grid(row=2, column=1, padx=10, pady=7, sticky="ew")
+            ttk.Checkbutton(form, text="Enabled", variable=enabled_v).grid(
+                row=3, column=1, padx=10, pady=3, sticky="w")
+            ttk.Checkbutton(form, text="Required (gagal jika kosong)", variable=required_v).grid(
+                row=4, column=1, padx=10, pady=3, sticky="w")
+            form.columnconfigure(1, weight=1)
+            tk.Label(dialog, text="TRANSFORM STEPS · diproses dari atas ke bawah",
+                     bg=BG, fg=MUTED, font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=18, pady=(12, 4))
+            operations = json.loads(json.dumps(original.get("operations", []) or []))
+            op_tree = ttk.Treeview(dialog, columns=("details", "enabled"), show="tree headings", height=8)
+            op_tree.heading("#0", text="OPERATION")
+            op_tree.heading("details", text="PARAMETERS")
+            op_tree.heading("enabled", text="STATE")
+            op_tree.column("#0", width=170)
+            op_tree.column("details", width=390)
+            op_tree.column("enabled", width=80, anchor="center")
+            op_tree.pack(fill="both", expand=True, padx=16, pady=4)
+            def operation_summary(operation):
+                op = operation.get("op", "")
+                fields = {
+                    "split": ("delimiter", "index"), "regex_extract": ("pattern", "group"),
+                    "replace": ("find", "replace"), "remove": ("text", "regex"),
+                    "trim": ("chars",), "collapse_spaces": (), "case": ("mode",),
+                    "datetime": ("source_timezone", "timezone", "format"),
+                    "prefix": ("text",), "suffix": ("text",),
+                }
+                return ", ".join(f"{key}={operation.get(key, '')}" for key in fields.get(op, ())) or "No parameter"
+            def refresh_operations():
+                for iid in op_tree.get_children():
+                    op_tree.delete(iid)
+                for i, operation in enumerate(operations):
+                    op_tree.insert("", "end", iid=str(i), text=operation.get("op", ""),
+                                   values=(operation_summary(operation),
+                                           "ON" if operation.get("enabled", True) else "OFF"))
+            def operation_dialog(existing=None):
+                seed = json.loads(json.dumps(existing or {}))
+                editor = tk.Toplevel(dialog)
+                editor.title("Edit Transform Step" if existing is not None else "Add Transform Step")
+                editor.geometry("560x520")
+                editor.configure(bg=BG)
+                op_v = tk.StringVar(value=seed.get("op", "split"))
+                enabled_op_v = tk.BooleanVar(value=bool(seed.get("enabled", True)))
+                tk.Label(editor, text="Operation type", bg=BG, fg=INK).pack(anchor="w", padx=16, pady=(14, 3))
+                op_box = ttk.Combobox(editor, textvariable=op_v,
+                    values=["split", "regex_extract", "replace", "remove", "trim",
+                            "collapse_spaces", "case", "datetime", "prefix", "suffix"],
+                    state="readonly")
+                op_box.pack(fill="x", padx=16)
+                fields_frame = tk.Frame(editor, bg=SURFACE)
+                fields_frame.pack(fill="both", expand=True, padx=16, pady=12)
+                fields = {}
+                def rebuild_operation_fields(_event=None):
+                    for child in fields_frame.winfo_children():
+                        child.destroy()
+                    fields.clear()
+                    specs = {
+                        "split": [("delimiter", "Delimiter", " - "), ("index", "Part index (mulai 0)", "0")],
+                        "regex_extract": [("pattern", "Regex pattern", r"(ZYW\d+)"), ("group", "Group number", "1")],
+                        "replace": [("find", "Find", "-"), ("replace", "Replace with", " ")],
+                        "remove": [("text", "Text / regex to remove", "-")],
+                        "trim": [("chars", "Characters (kosong = whitespace)", "")],
+                        "collapse_spaces": [],
+                        "case": [("mode", "Case mode", "upper")],
+                        "datetime": [("source_timezone", "Source timezone", "UTC"),
+                                     ("timezone", "Target timezone", "Asia/Jakarta"),
+                                     ("format", "Output format", "%Y%m%d")],
+                        "prefix": [("text", "Prefix", "")],
+                        "suffix": [("text", "Suffix", "")],
+                    }
+                    for row_index, (key, label, default) in enumerate(specs.get(op_v.get(), [])):
+                        tk.Label(fields_frame, text=label, bg=SURFACE, fg=INK,
+                                 width=25, anchor="w").grid(row=row_index, column=0, padx=8, pady=6, sticky="w")
+                        value = seed.get(key, default)
+                        variable = tk.StringVar(value=str(value))
+                        if key == "mode":
+                            widget = ttk.Combobox(fields_frame, textvariable=variable,
+                                                  values=["upper", "lower", "title"], state="readonly")
+                        elif key in ("timezone", "source_timezone"):
+                            widget = ttk.Combobox(fields_frame, textvariable=variable,
+                                values=["UTC", "Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura"], width=35)
+                        else:
+                            widget = ttk.Entry(fields_frame, textvariable=variable)
+                        widget.grid(row=row_index, column=1, padx=8, pady=6, sticky="ew")
+                        fields[key] = variable
+                    fields_frame.columnconfigure(1, weight=1)
+                    if op_v.get() == "remove":
+                        fields["regex"] = tk.BooleanVar(value=bool(seed.get("regex", False)))
+                        ttk.Checkbutton(fields_frame, text="Interpret as regular expression",
+                                        variable=fields["regex"]).grid(row=len(specs["remove"]), column=1,
+                                                                      padx=8, pady=4, sticky="w")
+                    ttk.Checkbutton(fields_frame, text="Enabled", variable=enabled_op_v).grid(
+                        row=12, column=1, padx=8, pady=12, sticky="w")
+                op_box.bind("<<ComboboxSelected>>", rebuild_operation_fields)
+                rebuild_operation_fields()
+                def save_operation():
+                    result = {"op": op_v.get(), "enabled": enabled_op_v.get()}
+                    for key, variable in fields.items():
+                        value = variable.get()
+                        if key in ("index", "group"):
+                            try:
+                                value = int(value)
+                            except ValueError:
+                                messagebox.showerror("Transform Step", f"{key} harus berupa angka.", parent=editor)
+                                return
+                        result[key] = value
+                    try:
+                        core.naming.validate_naming_config({"template": "{TEMP}",
+                            "variables": [{"name": "TEMP", "source": "literal:test", "operations": [result]}]})
+                        if existing is None:
+                            operations.append(result)
+                        else:
+                            op_index = operations.index(existing)
+                            operations[op_index] = result
+                        refresh_operations()
+                        editor.destroy()
+                    except Exception as exc:
+                        messagebox.showerror("Transform Step", str(exc), parent=editor)
+                self._button(editor, "SAVE STEP", save_operation, dark=True).pack(anchor="e", padx=16, pady=(0, 14))
+            def selected_operation_index():
+                selection = op_tree.selection()
+                return int(selection[0]) if selection else None
+            def add_operation():
+                operation_dialog()
+            def edit_operation():
+                i = selected_operation_index()
+                if i is not None:
+                    operation_dialog(operations[i])
+            def toggle_operation():
+                i = selected_operation_index()
+                if i is not None:
+                    operations[i]["enabled"] = not operations[i].get("enabled", True)
+                    refresh_operations()
+            def move_operation(delta):
+                i = selected_operation_index()
+                target = i + delta if i is not None else -1
+                if i is not None and 0 <= target < len(operations):
+                    operations[i], operations[target] = operations[target], operations[i]
+                    refresh_operations()
+                    op_tree.selection_set(str(target))
+            def delete_operation():
+                i = selected_operation_index()
+                if i is not None:
+                    operations.pop(i)
+                    refresh_operations()
+            op_buttons = tk.Frame(dialog, bg=BG)
+            op_buttons.pack(fill="x", padx=16, pady=6)
+            for label, command in (("+ Add", add_operation), ("Edit", edit_operation),
+                                   ("Enable / Disable", toggle_operation), ("↑", lambda: move_operation(-1)),
+                                   ("↓", lambda: move_operation(1)), ("Delete", delete_operation),
+                                   ("Reset Steps", lambda: (operations.clear(), refresh_operations()))):
+                self._button(op_buttons, label, command, dark=False).pack(side="left", padx=(0, 4))
+            refresh_operations()
+            def save_variable():
+                definition = {"name": name_v.get().strip().upper(), "source": source_v.get().strip(),
+                              "fallback": fallback_v.get(), "enabled": enabled_v.get(),
+                              "required": required_v.get(), "operations": operations}
+                try:
+                    core.naming.validate_naming_config({"template": "{" + definition["name"] + "}",
+                                                         "variables": [definition]})
+                    if index is None:
+                        custom_variables.append(definition)
+                    else:
+                        custom_variables[index] = definition
+                    refresh_custom_variable_tree()
+                    dialog.destroy()
+                    update_naming_preview()
+                except Exception as exc:
+                    messagebox.showerror("Custom Variable", str(exc), parent=dialog)
+            self._button(dialog, "SAVE VARIABLE", save_variable, dark=True).pack(anchor="e", padx=16, pady=14)
+        def selected_custom_variable_index():
+            selection = custom_tree.selection()
+            return int(selection[0]) if selection else None
+        def add_custom_variable():
+            edit_custom_variable()
+        def edit_selected_custom_variable():
+            index = selected_custom_variable_index()
+            if index is not None:
+                edit_custom_variable(index)
+        def remove_custom_variable():
+            index = selected_custom_variable_index()
+            if index is not None:
+                custom_variables.pop(index)
+                refresh_custom_variable_tree()
+                update_naming_preview()
+        custom_buttons = tk.Frame(nf, bg=SURFACE)
+        custom_buttons.pack(fill="x", padx=16, pady=(0, 6))
+        self._button(custom_buttons, "+ ADD VARIABLE", add_custom_variable, dark=True).pack(side="left")
+        self._button(custom_buttons, "EDIT", edit_selected_custom_variable, dark=False).pack(side="left", padx=5)
+        self._button(custom_buttons, "REMOVE", remove_custom_variable, dark=False).pack(side="left", padx=5)
+        variables_preview_var = tk.StringVar(value="Custom variable preview akan muncul setelah JSON di-scan.")
+        tk.Label(nf, textvariable=variables_preview_var, bg="#F7F8FA", fg=MUTED,
+                 font=("Consolas", 8), anchor="w", justify="left", wraplength=900,
+                 padx=10, pady=6).pack(fill="x", padx=16, pady=(0, 8))
+        refresh_custom_variable_tree()
+
         section(nf, "Folder name template",
                 "Susun ulang token dan separator. Token yang tidak tersedia otomatis dihilangkan.")
         template_var = tk.StringVar(value=str(naming_cfg.get("template") or core.naming.DEFAULT_TEMPLATE))
@@ -849,8 +1127,11 @@ class App:
         template_row.pack(fill="x", padx=16, pady=(0, 6))
         ttk.Entry(template_row, textvariable=template_var).pack(side="left", fill="x", expand=True, padx=(0, 8))
         token_add_var = tk.StringVar(value="DATE")
-        ttk.Combobox(template_row, textvariable=token_add_var, values=list(core.naming.TOKENS),
-                     state="readonly", width=18).pack(side="left", padx=(0, 6))
+        token_box = ttk.Combobox(template_row, textvariable=token_add_var,
+                                  values=list(core.naming.TOKENS) +
+                                         [item.get("name", "").upper() for item in custom_variables],
+                                  state="readonly", width=22)
+        token_box.pack(side="left", padx=(0, 6))
         def insert_naming_token():
             current = template_var.get().strip()
             template_var.set((current + "_" if current else "") + "{" + token_add_var.get() + "}")
@@ -861,32 +1142,86 @@ class App:
         naming_preview_var = tk.StringVar(value="Preview akan muncul setelah JSON dipindai.")
         tk.Label(nf, textvariable=naming_preview_var, bg="#F7F8FA", fg=INK,
                  font=("Consolas", 9), anchor="w", justify="left", wraplength=900,
-                 padx=10, pady=8).pack(fill="x", padx=16, pady=(0, 10))
+                 padx=10, pady=8).pack(fill="x", padx=16, pady=(0, 5))
+        tk.Label(nf, text="MULTI-RECORD PREVIEW · hingga 20 record pertama jika JSON berupa array",
+                 bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=16, pady=(2, 3))
+        preview_tree = ttk.Treeview(nf, columns=("task", "result"), show="tree headings", height=4)
+        preview_tree.heading("#0", text="#")
+        preview_tree.heading("task", text="SOURCE / TASK")
+        preview_tree.heading("result", text="GENERATED FOLDER NAME")
+        preview_tree.column("#0", width=42, anchor="center", stretch=False)
+        preview_tree.column("task", width=300, minwidth=160)
+        preview_tree.column("result", width=470, minwidth=220)
+        preview_tree.pack(fill="x", padx=16, pady=(0, 12))
         def update_naming_preview(*_args):
+            for iid in preview_tree.get_children():
+                preview_tree.delete(iid)
             if not detected_fields or not os.path.isfile(source_json_var.get()):
                 naming_preview_var.set("Preview akan muncul setelah JSON dipindai.")
+                variables_preview_var.set("Custom variable preview akan muncul setelah JSON di-scan.")
                 return
             try:
                 with open(source_json_var.get(), encoding="utf-8-sig") as stream:
                     sample = json.load(stream)
-                meta = sample if isinstance(sample, dict) else (sample[0] if sample and isinstance(sample[0], dict) else {})
-                task = str(meta.get("task") or "")
-                device_no, activity = core._task_fields(task)
-                shift_label = ""
-                if mode_var.get() != "none" and self.cfg.get("shifts"):
-                    shift_label = str(self.cfg["shifts"][0][2])
+                records = sample if isinstance(sample, list) else [sample]
+                records = [item for item in records if isinstance(item, dict)][:20]
+                if not records:
+                    raise ValueError("JSON tidak berisi object sesi untuk preview.")
                 field_map = {k: ("" if v.get() == "(Auto / derived)" else v.get())
                              for k, v in map_vars.items()}
+                preview_shifts = [[start.get(), end.get(), name.get(), int(number.get())]
+                                  for name, start, end, number in shift_rows]
                 preview_cfg = dict(self.cfg)
                 preview_cfg["shift_mode"] = mode_var.get()
-                preview_cfg["naming"] = {"template": template_var.get(), "field_map": field_map}
+                preview_cfg["shifts"] = preview_shifts
+                preview_cfg["naming"] = {"template": template_var.get(), "field_map": field_map,
+                                         "variables": json.loads(json.dumps(custom_variables))}
                 from types import SimpleNamespace
-                fake = SimpleNamespace(metadata=meta, start=None, location=meta.get("location", ""),
-                    capturer=meta.get("capturer", ""), task=task, device_no=device_no,
-                    activity=activity, shift=shift_label)
-                naming_preview_var.set("Preview: " + core.naming.build_folder_name(fake, preview_cfg))
+                first_values = {}
+                errors = []
+                for row_number, meta in enumerate(records, 1):
+                    task = str(meta.get("task") or "")
+                    device_no, activity = core._task_fields(task)
+                    start_time = None
+                    raw_stamp = meta.get("start_time_unix")
+                    if raw_stamp not in (None, ""):
+                        try:
+                            stamp = float(raw_stamp)
+                            if abs(stamp) >= 1e14:
+                                stamp /= 1e6
+                            elif abs(stamp) >= 1e11:
+                                stamp /= 1e3
+                            start_time = dt.datetime.fromtimestamp(stamp, core.WIB)
+                        except (TypeError, ValueError, OSError, OverflowError):
+                            start_time = None
+                    fake = SimpleNamespace(metadata=meta, start=start_time, location=meta.get("location", ""),
+                        capturer=meta.get("capturer", ""), task=task, device_no=device_no,
+                        activity=activity, shift="", split={}, duration_s=0.0, overtime_min=0.0, end=None)
+                    if start_time and mode_var.get() != "none" and preview_shifts:
+                        core.split_shifts(fake, preview_shifts, enabled=True)
+                    try:
+                        values = core.naming.evaluate_variables(fake, preview_cfg)
+                        folder_name = core.naming.build_folder_name(fake, preview_cfg)
+                        preview_tree.insert("", "end", iid=str(row_number),
+                            text=str(row_number), values=(task or "(task kosong)", folder_name))
+                        if row_number == 1:
+                            first_values = values
+                    except Exception as exc:
+                        errors.append(f"Record {row_number}: {exc}")
+                        preview_tree.insert("", "end", iid=str(row_number),
+                            text=str(row_number), values=(task or "(task kosong)", "ERROR: " + str(exc)))
+                custom_values = [f"{item['name'].upper()}={first_values.get(item['name'].upper(), '')}"
+                                 for item in custom_variables]
+                variables_preview_var.set("   |   ".join(custom_values) if custom_values
+                                          else "Belum ada custom variable.")
+                success_count = len(records) - len(errors)
+                naming_preview_var.set(
+                    f"Preview: {success_count}/{len(records)} record berhasil diproses"
+                    + (f" · {len(errors)} error" if errors else "")
+                )
             except Exception as exc:
                 naming_preview_var.set("Preview belum dapat dibuat: " + str(exc))
+                variables_preview_var.set("Periksa variable / transform: " + str(exc))
         template_var.trace_add("write", update_naming_preview)
         for _token_var in map_vars.values():
             _token_var.trace_add("write", update_naming_preview)
@@ -993,7 +1328,8 @@ class App:
         preset_names = list(builtin) + [x for x in custom if x not in builtin]
         preset_var = tk.StringVar(value=self.cfg.get("active_preset", "Default (Legacy Workflow)"))
         preset_row = tk.Frame(pf, bg=SURFACE); preset_row.pack(fill="x", padx=16, pady=8)
-        ttk.Combobox(preset_row, textvariable=preset_var, values=preset_names, state="readonly", width=32).pack(side="left")
+        preset_box = ttk.Combobox(preset_row, textvariable=preset_var, values=preset_names, state="readonly", width=32)
+        preset_box.pack(side="left")
         def load_selected_preset():
             name = preset_var.get()
             try:
@@ -1006,6 +1342,61 @@ class App:
             except Exception as exc:
                 messagebox.showerror("Preset", str(exc), parent=win)
         self._button(preset_row, "APPLY PRESET", load_selected_preset, dark=True).pack(side="left", padx=8)
+        preset_io_row = tk.Frame(pf, bg=SURFACE)
+        preset_io_row.pack(fill="x", padx=16, pady=(0, 8))
+        def preset_config_for_export(name):
+            catalog = core.preset_catalog(self.cfg)
+            catalog.update(self.cfg.get("custom_presets", {}) or {})
+            if name not in catalog:
+                raise ValueError(f"Preset tidak ditemukan: {name}")
+            result = json.loads(json.dumps(catalog[name]))
+            if "naming" not in result:
+                result["naming"] = json.loads(json.dumps(self.cfg.get("naming", core.DEFAULT_CONFIG["naming"])))
+            return result
+        def export_preset(name):
+            try:
+                payload = preset_config_for_export(name)
+                path = filedialog.asksaveasfilename(parent=win, title="Export ZYWTool preset",
+                    initialfile=(re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_") or "ZYWTool_Preset") + ".zywpreset.json",
+                    defaultextension=".zywpreset.json",
+                    filetypes=[("ZYWTool preset", "*.zywpreset.json"), ("JSON", "*.json")])
+                if not path:
+                    return
+                saved = preset_io.export_preset_file(path, name, payload)
+                messagebox.showinfo("Preset Export", f"Preset berhasil diekspor:\n{saved}\n\nFolder output, folder data, dan path lokal tidak ikut diekspor.", parent=win)
+            except Exception as exc:
+                messagebox.showerror("Preset Export", str(exc), parent=win)
+        def export_default_preset():
+            export_preset("Default (Legacy Workflow)")
+        def export_selected_preset():
+            export_preset(preset_var.get())
+        def import_preset():
+            path = filedialog.askopenfilename(parent=win, title="Import ZYWTool preset",
+                filetypes=[("ZYWTool preset", "*.zywpreset.json"), ("JSON", "*.json")])
+            if not path:
+                return
+            try:
+                name, imported_config = preset_io.import_preset_file(path)
+                if imported_config.get("shift_mode", "enabled") != "none" and imported_config.get("shifts"):
+                    core.validate_shifts(imported_config["shifts"])
+                target_name = name
+                suffix = 1
+                while target_name in builtin or target_name in self.cfg.get("custom_presets", {}):
+                    suffix += 1
+                    target_name = f"{name} (Imported {suffix})"
+                self.cfg.setdefault("custom_presets", {})[target_name] = imported_config
+                core.save_config(self.cfg)
+                preset_names.append(target_name)
+                preset_box.configure(values=preset_names)
+                preset_var.set(target_name)
+                messagebox.showinfo("Preset Import",
+                    f"Preset '{target_name}' berhasil diimpor.\nPreset belum diterapkan. Pilih APPLY PRESET untuk menggunakannya.",
+                    parent=win)
+            except Exception as exc:
+                messagebox.showerror("Preset Import", str(exc), parent=win)
+        self._button(preset_io_row, "EXPORT DEFAULT PRESET", export_default_preset, dark=True).pack(side="left")
+        self._button(preset_io_row, "EXPORT SELECTED", export_selected_preset, dark=False).pack(side="left", padx=6)
+        self._button(preset_io_row, "IMPORT PRESET", import_preset, dark=False).pack(side="left", padx=6)
         save_row = tk.Frame(pf, bg=SURFACE); save_row.pack(fill="x", padx=16, pady=8)
         preset_name = tk.StringVar()
         ttk.Entry(save_row, textvariable=preset_name, width=34).pack(side="left")
@@ -1028,9 +1419,13 @@ class App:
                 snapshot = {"shift_mode": mode_var.get(), "shifts": shifts, "check_mode": op_vars["check_mode"].get(), "qc": op_vars["qc"].get(),
                             "supervisor": op_vars["supervisor"].get(), "activities": activities,
                             "naming": {"source_json": source_json_var.get().strip(), "template": template_var.get().strip(),
-                                       "field_map": {k: ("" if v.get() == "(Auto / derived)" else v.get()) for k, v in map_vars.items()}},
+                                       "field_map": {k: ("" if v.get() == "(Auto / derived)" else v.get()) for k, v in map_vars.items()},
+                                       "variables": json.loads(json.dumps(custom_variables))},
                             "hand_check": {k: v.get() for k,v in hc_vars.items()} |
                                           {"rule": hc_rule.get(), **{k:v.get() for k,v in hc_flags.items()}}}
+                core.naming.validate_naming_config(snapshot["naming"])
+                if mode_var.get() != "none":
+                    core.validate_shifts(shifts)
                 self.cfg.setdefault("custom_presets", {})[name] = snapshot
                 self.cfg["active_preset"] = name
                 core.save_config(self.cfg)
@@ -1076,14 +1471,16 @@ class App:
                 if not activities:
                     raise ValueError("Minimal satu aktivitas/ruangan harus tersedia.")
                 new_cfg = dict(self.cfg)
-                new_cfg.update({"config_version": 2, "shift_mode": mode_var.get(), "shifts": shifts,
+                new_cfg.update({"config_version": 3, "shift_mode": mode_var.get(), "shifts": shifts,
                                 "check_mode": op_vars["check_mode"].get(),
                                 "qc": op_vars["qc"].get().strip(), "supervisor": op_vars["supervisor"].get().strip(),
                                 "activities": activities,
                                 "naming": {"source_json": source_json_var.get().strip(), "template": template_var.get().strip(),
-                                           "field_map": {k: ("" if v.get() == "(Auto / derived)" else v.get()) for k, v in map_vars.items()}},
+                                           "field_map": {k: ("" if v.get() == "(Auto / derived)" else v.get()) for k, v in map_vars.items()},
+                                           "variables": json.loads(json.dumps(custom_variables))},
                                 "hand_check": {k: v.get() for k,v in hc_vars.items()} |
                                               {"rule": hc_rule.get(), **{k:v.get() for k,v in hc_flags.items()}}})
+                core.naming.validate_naming_config(new_cfg["naming"])
                 if developer_var.get() and hasattr(self, "_dev_json_text"):
                     advanced = json.loads(self._dev_json_text.get("1.0", "end"))
                     for key in ("shift_mode", "shifts", "check_mode", "qc", "supervisor", "activities", "hand_check"):

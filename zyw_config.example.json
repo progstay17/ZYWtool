@@ -65,7 +65,7 @@
   "hand_check_root": "",
   "organized_root": "",
   "data_root": "",
-  "config_version": 2,
+  "config_version": 3,
   "check_mode": "quick",
   "shift_mode": "enabled",
   "active_preset": "Default (Legacy Workflow)",
@@ -80,6 +80,7 @@
       "DEVICE_ID": "task",
       "SESSION": "",
       "ACTIVITY": ""
-    }
+    },
+    "variables": []
   }
 }

@@ -130,9 +130,9 @@ def _derived_value(token, metadata, session, cfg):
             return activity
         if metadata.get("activity"):
             return metadata["activity"]
-        cleaned = re.sub(r"(?i)\\bcleaning\\b", "", task)
-        cleaned = re.sub(r"(?i)\\bZYW\\s*\\d+\\b", "", cleaned)
-        cleaned = re.sub(r"\\(\\s*\\d+\\s*\\)", "", cleaned)
+        cleaned = re.sub(r"(?i)\bcleaning\b", "", task)
+        cleaned = re.sub(r"(?i)\bZYW\s*\d+\b", "", cleaned)
+        cleaned = re.sub(r"\(\s*\d+\s*\)", "", cleaned)
         return " ".join(cleaned.split())
     if token == "SESSION":
         if (cfg or {}).get("shift_mode", "enabled") == "none":

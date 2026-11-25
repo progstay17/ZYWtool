@@ -10,6 +10,7 @@ import datetime as dt
 from dataclasses import dataclass, field
 
 from mcap.reader import make_reader
+import naming
 
 WIB = dt.timezone(dt.timedelta(hours=7))
 MAGIC = b"\x89MCAP0\r\n"
@@ -92,6 +93,8 @@ def load_config():
         if isinstance(item, list) and len(item) >= 3 and item[2] in legacy_labels:
             item[2] = legacy_labels[item[2]]
     cfg.setdefault("custom_presets", {})
+    cfg.setdefault("naming", {"source_json": "", "template": naming.DEFAULT_TEMPLATE,
+                              "field_map": dict(naming.DEFAULT_FIELD_MAP)})
     # Preserve the existing v1.0.5 operational setup as the users legacy default preset.
     if loaded and "active_preset" not in loaded:
         cfg["custom_presets"]["Default (Legacy Workflow)"] = {
@@ -184,7 +187,7 @@ def apply_preset(cfg, name):
     if name not in catalog:
         raise ValueError(f"Preset tidak ditemukan: {name}")
     result = json.loads(json.dumps(cfg))
-    for key in ("shift_mode", "shifts", "check_mode", "qc", "supervisor", "activities", "hand_check"):
+    for key in ("shift_mode", "shifts", "check_mode", "qc", "supervisor", "activities", "hand_check", "naming"):
         if key in catalog[name]:
             result[key] = json.loads(json.dumps(catalog[name][key]))
     result["active_preset"] = name
@@ -295,6 +298,7 @@ class Session:
     split: dict = field(default_factory=dict)   # label shift -> menit (satu sesi = satu shift)
     overtime_min: float = 0.0                   # menit yang lewat batas akhir shift
     hand: dict = field(default_factory=dict)    # hasil handcheck (kosong kalau tidak dijalankan)
+    metadata: dict = field(default_factory=dict) # raw session.json for configurable folder naming
     errors: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
 
@@ -372,6 +376,7 @@ def scan_session(path, full=False):
     except Exception as e:
         m = {}
         s.errors.append(f"session.json tidak tersedia/valid: {type(e).__name__}: {e}")
+    s.metadata = m
     s.device_id = m.get("device_id", "")
     s.task = m.get("task", "")
     s.location = m.get("location", "")
@@ -605,19 +610,13 @@ def shift_number(label, cfg):
 
 
 def name_map(sessions, cfg):
-    """Nama folder: yyyymmdd_LOKASI_NamaRecorder_ZYWxxx_S<nomor shift>_Aktivitas
-    contoh: YYYYMMDD_LOKASI_RecorderContoh_DEVICE_S1_Aktivitas
-    Semua sesi dengan kunci yang sama masuk ke folder grup yang sama."""
+    """Build group folder names from the Preferences naming template."""
     base = {}
     for s in sessions:
         if not s.start:
             continue
-        base[s.name] = "_".join([
-            s.start.strftime("%Y%m%d"), _alnum(s.location) or "NOLOC",
-            _alnum(s.capturer) or "NOREC", s.device_no or "NODEV",
-            f"S{shift_number(s.shift, cfg)}", _alnum(s.activity) or "NOACT"])
+        base[s.name] = naming.build_folder_name(s, cfg)
     return base
-    return names
 
 
 def resolve_session_path(s, root=None):

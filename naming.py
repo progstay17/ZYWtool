@@ -61,14 +61,12 @@ def _read_path(data, path):
     if not path:
         return None
     current = data
-    for part in re.findall(r"[^.\\[\\]]+|\\[\\d+\\]", str(path)):
-        if part.startswith("["):
-            if not isinstance(current, list):
+    parts = [part for part in str(path).replace("[", ".").replace("]", "").split(".") if part]
+    for part in parts:
+        if part.isdigit():
+            if not isinstance(current, list) or int(part) >= len(current):
                 return None
-            index = int(part[1:-1])
-            if index >= len(current):
-                return None
-            current = current[index]
+            current = current[int(part)]
         else:
             if not isinstance(current, dict):
                 return None

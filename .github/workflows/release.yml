@@ -48,6 +48,6 @@ jobs:
           ### Validation
           - CI compile and regression suite.
           - Windows portable build and ZIP integrity check.
-          - GUI Preferences smoke test.
+          - Portable package bundles timezone database for Windows IANA timezone conversion.
           '@
           gh release create "v1.0.8" ".\release\ZYWtool-Windows-Portable.zip" --title "ZYWtool v1.0.8 - Windows Portable" --notes $notes

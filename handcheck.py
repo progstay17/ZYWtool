@@ -69,6 +69,16 @@ def get_cfg(hc=None):
     cfg = dict(DEFAULTS)
     if isinstance(hc, dict):
         cfg.update({k: v for k, v in hc.items() if k in DEFAULTS})
+    for key in ("frames", "sample_every_s", "min_frames", "max_frames", "cam"):
+        cfg[key] = int(cfg[key])
+    for key in ("max_error_pct", "conf"):
+        cfg[key] = float(cfg[key])
+    if cfg["frames"] < 1 or cfg["sample_every_s"] < 1 or cfg["min_frames"] < 1:
+        raise ValueError("Frames, sample interval, and minimum frames must be positive.")
+    if cfg["max_frames"] < cfg["min_frames"]:
+        raise ValueError("Maximum frames cannot be lower than minimum frames.")
+    if not 0 <= cfg["max_error_pct"] <= 100 or not 0 < cfg["conf"] <= 1:
+        raise ValueError("Hand Check percentages/confidence are outside valid ranges.")
     return cfg
 
 

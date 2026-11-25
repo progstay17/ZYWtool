@@ -22,6 +22,7 @@ CONFIG_PATH = (os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), 
 SHEET = "ZY White"
 CHECK_SHEET = "Cek File"
 UNSHIFTED = "DI LUAR SHIFT"
+NO_SHIFT = "TANPA SHIFT"
 CREDIT = "Fadhil Ghifarion 法迪 for AIT"
 STATUS_LABELS = ["OSS Not Yet", "Galaxea Not Yet", "HDD Not Yet"]
 
@@ -31,11 +32,13 @@ HEADERS = ["Device No.", "Date", "Activity", "Status", "QC", "Recorder Name", "L
 
 DEFAULT_CONFIG = {
     # [jam mulai, jam selesai, label persis seperti dropdown di sheet, nomor shift]
+    "config_version": 2,
+    "shift_mode": "enabled",
     "shifts": [
-        ["07:00", "11:00", "7 AM - 11 PM", 1],
+        ["07:00", "11:00", "7 AM - 11 AM", 1],
         ["12:00", "16:00", "12 PM - 4 PM", 2],
         ["16:10", "18:30", "4:10 PM - 6:30 PM", 3],
-        ["18:30", "20:30", "6:30 PM - 8:80 PM", 4],
+        ["18:30", "20:30", "6:30 PM - 8:30 PM", 4],
     ],
     "qc": "",
     "supervisor": "",
@@ -58,6 +61,7 @@ DEFAULT_CONFIG = {
     "organized_root": "",
     "preview_root": "",
     "hand_check_root": "",
+    "check_mode": "quick",
 }
 
 
@@ -80,9 +84,29 @@ def load_config():
             if os.path.basename(legacy).lower().endswith((".xlsx", ".xlsm")):
                 cfg["excel_filename"] = os.path.basename(legacy)
 
+    cfg.setdefault("config_version", 2)
+    cfg.setdefault("shift_mode", "enabled")
+    # Correct two display-only typos from the original defaults without changing shift times.
+    legacy_labels = {"7 AM - 11 PM": "7 AM - 11 AM", "6:30 PM - 8:80 PM": "6:30 PM - 8:30 PM"}
+    for item in cfg.get("shifts", []):
+        if isinstance(item, list) and len(item) >= 3 and item[2] in legacy_labels:
+            item[2] = legacy_labels[item[2]]
+    cfg.setdefault("custom_presets", {})
+    # Preserve the existing v1.0.5 operational setup as the users legacy default preset.
+    if loaded and "active_preset" not in loaded:
+        cfg["custom_presets"]["Default (Legacy Workflow)"] = {
+            key: json.loads(json.dumps(cfg.get(key, DEFAULT_CONFIG.get(key))))
+            for key in ("shift_mode", "shifts", "check_mode", "qc", "supervisor", "activities", "hand_check")
+        }
+        cfg["active_preset"] = "Default (Legacy Workflow)"
     for key in ("excel_root", "preview_root", "hand_check_root", "organized_root"):
         raw = str(cfg.get(key) or "").strip()
         cfg[key] = os.path.abspath(os.path.expandvars(os.path.expanduser(raw))) if raw else ""
+    if loaded and "active_preset" not in loaded:
+        try:
+            save_config(cfg)
+        except OSError:
+            pass
     return cfg
 
 
@@ -125,6 +149,81 @@ def save_config(cfg):
                 os.remove(tmp)
             except OSError:
                 pass
+
+
+def preset_catalog(cfg=None):
+    """Built-in presets preserve the original ZYWtool workflow as the default."""
+    base = DEFAULT_CONFIG
+    legacy = {k: json.loads(json.dumps(base.get(k, DEFAULT_CONFIG.get(k))))
+              for k in ("shift_mode", "shifts", "check_mode", "qc", "supervisor", "activities", "hand_check")}
+    morning = json.loads(json.dumps(legacy))
+    morning["shift_mode"] = "enabled"
+    morning["shifts"] = [["07:00", "15:00", "7 AM - 3 PM", 1]]
+    full_day = json.loads(json.dumps(legacy))
+    full_day["shift_mode"] = "enabled"
+    full_day["shifts"] = [
+        ["07:00", "11:00", "7 AM - 11 AM", 1],
+        ["11:00", "15:00", "11 AM - 3 PM", 2],
+        ["15:00", "19:00", "3 PM - 7 PM", 3],
+        ["19:00", "23:00", "7 PM - 11 PM", 4],
+    ]
+    no_shift = json.loads(json.dumps(legacy))
+    no_shift["shift_mode"] = "none"
+    return {
+        "Default (Legacy Workflow)": legacy,
+        "No Shift": no_shift,
+        "Morning Shift": morning,
+        "Full Day Operations": full_day,
+    }
+
+
+def apply_preset(cfg, name):
+    """Apply operational settings only; never overwrite user paths or data locations."""
+    catalog = preset_catalog(cfg)
+    catalog.update((cfg.get("custom_presets") or {}))
+    if name not in catalog:
+        raise ValueError(f"Preset tidak ditemukan: {name}")
+    result = json.loads(json.dumps(cfg))
+    for key in ("shift_mode", "shifts", "check_mode", "qc", "supervisor", "activities", "hand_check"):
+        if key in catalog[name]:
+            result[key] = json.loads(json.dumps(catalog[name][key]))
+    result["active_preset"] = name
+    return result
+
+
+def validate_shifts(shifts):
+    if not isinstance(shifts, list):
+        raise ValueError("Daftar shift harus berupa list.")
+    if not shifts:
+        raise ValueError("Minimal satu shift harus tersedia pada mode Shift-based.")
+    parsed = []
+    for i, item in enumerate(shifts, 1):
+        if not isinstance(item, (list, tuple)) or len(item) < 4:
+            raise ValueError(f"Shift {i} tidak lengkap.")
+        start, end, label, number = item[:4]
+        try:
+            a = parse_hm(str(start))
+            b = parse_hm(str(end))
+        except Exception as exc:
+            raise ValueError(f"Jam Shift {i} harus format HH:MM.") from exc
+        if a == b:
+            raise ValueError(f"Jam mulai dan selesai Shift {i} tidak boleh sama.")
+        if not str(label).strip():
+            raise ValueError(f"Nama Shift {i} belum diisi.")
+        start_min = a.hour * 60 + a.minute
+        end_min = b.hour * 60 + b.minute
+        if end_min <= start_min:
+            end_min += 1440
+        parsed.append((start_min, end_min, str(label).strip()))
+    labels = [item[2].casefold() for item in parsed]
+    if len(labels) != len(set(labels)):
+        raise ValueError("Nama shift harus unik.")
+    for i, first in enumerate(parsed):
+        for second in parsed[i + 1:]:
+            for offset in (-1440, 0, 1440):
+                if max(first[0], second[0] + offset) < min(first[1], second[1] + offset):
+                    raise ValueError(f"Jadwal shift bertumpuk: {first[2]} dan {second[2]}.")
+    return True
 
 
 def parse_hm(t):
@@ -416,32 +515,36 @@ def scan_all(root, full=False, progress=None, hand_check=False, hand_cfg=None, s
     return sessions
 
 
-def split_shifts(s, shifts):
-    """Satu sesi = satu shift, ditentukan dari waktu MULAI sesi:
-    1. Shift yang memuat waktu mulai.
-    2. Mulai di celah (sebelum shift pertama atau di antara dua shift) -> shift berikutnya.
-    3. Mulai setelah shift terakhir -> DI LUAR SHIFT.
-    Menit yang lewat batas akhir shift terpilih dicatat sebagai lembur."""
-    s.split, s.shift, s.overtime_min = {}, UNSHIFTED, 0.0
-    if not s.start:
+def split_shifts(s, shifts, enabled=True):
+    """Assign one shift by session start; supports gaps and overnight shift windows."""
+    s.split, s.shift, s.overtime_min = {}, (UNSHIFTED if enabled else NO_SHIFT), 0.0
+    if not enabled or not s.start:
         return s
+    validate_shifts(shifts)
     day = s.start.date()
-    wins = sorted(((dt.datetime.combine(day, parse_hm(st), WIB),
-                    dt.datetime.combine(day, parse_hm(en), WIB), label)
-                   for st, en, label, *_ in shifts), key=lambda w: w[0])
+    wins = []
+    for day_offset in (-1, 0):
+        target_day = day + dt.timedelta(days=day_offset)
+        for st, en, label, *_ in shifts:
+            a = dt.datetime.combine(target_day, parse_hm(st), WIB)
+            b = dt.datetime.combine(target_day, parse_hm(en), WIB)
+            if b <= a:
+                b += dt.timedelta(days=1)
+            wins.append((a, b, label))
+    wins.sort(key=lambda w: w[0])
     t = s.start
-    cont = [w for w in wins if w[0] <= t < w[1]]
-    if cont:
-        chosen = max(cont, key=lambda w: w[0])
+    containing = [w for w in wins if w[0] <= t < w[1]]
+    if containing:
+        chosen = max(containing, key=lambda w: w[0])
     else:
-        nxt = [w for w in wins if w[0] > t]
-        chosen = min(nxt, key=lambda w: w[0]) if nxt else None
+        following = [w for w in wins if w[0] > t and w[0].date() == day]
+        chosen = min(following, key=lambda w: w[0]) if following else None
     if chosen is None:
         return s
     a, b, label = chosen
     s.shift = label
     s.split = {label: s.duration_s / 60}
-    s.overtime_min = round(max(0.0, (s.end - b).total_seconds() / 60), 1)
+    s.overtime_min = round(max(0.0, (s.end - b).total_seconds() / 60), 2) if s.end else 0.0
     return s
 
 

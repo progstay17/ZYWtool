@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.5-2563eb">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.6-2563eb">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2F11-0f766e">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776ab">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-16a34a">
@@ -64,13 +64,9 @@ Choose an existing folder or enter a new destination path. ZYWtool creates missi
 
 > **Tip:** Keep source recordings separate from output folders. For Arrange, choose a destination that will not overwrite or mix with your original recording data.
 
-### What is the installer for?
+### No installer or administrator permission required
 
-Running `ZYWtool.exe` directly is the normal portable workflow. Installation is optional.
-
-If you want a Start/Desktop shortcut and a copy under your Windows user Programs folder, double-click **`Install ZYWtool.bat`** from the extracted package. It launches the PowerShell installer, checks the Microsoft Visual C++ Redistributable x64 prerequisite and installs it when needed. The command window remains open so you can read the result if installation fails.
-
-**You do not need to run `install.ps1` manually.**
+The portable release is self-contained: extract the ZIP and run ZYWtool/ZYWtool.exe. The application bundles its Python runtime and application libraries. It runs with the current Windows user (asInvoker), does not register services, write to Program Files, change machine-wide settings, or request administrator elevation. No separate Python, pip, or application dependency installation is required. Keep the extracted folder in a location where your Windows user can write.
 
 ### Hand Check model
 

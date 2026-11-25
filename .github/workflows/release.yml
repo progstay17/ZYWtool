@@ -30,26 +30,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $notes = @'
-          ## ZYWtool v1.0.5
+          ## ZYWtool v1.0.6
 
           ### What's new
-          - First-run setup guides users through Excel, Preview, Hand Check and Organized output folders.
-          - Fresh installs no longer use hidden default output paths.
-          - New destination folders are created automatically and checked for write access.
-          - Fixed portable first-run configuration saving when the APPDATA folder does not yet exist.
-          - GUI attribution updated to **Fadhil Ghifarion 法迪 for AIT**.
-          - Portable use is now straightforward: extract the ZIP and run `ZYWtool\ZYWtool.exe`.
+          - GUI-first Preferences for shift schedules, operational defaults, activity aliases and Hand Check.
+          - 24-hour selectable Shift Manager with add/remove/reorder, overlap validation and overnight support.
+          - Explicit No Shift mode.
+          - Existing v1.0.5 operational settings migrate into the Default (Legacy Workflow) preset.
+          - Built-in presets: Default (Legacy Workflow), No Shift, Morning Shift and Full Day Operations.
+          - JSON editor is hidden in Developer Mode.
+          - Existing scan, audit, explorer, Arrange/Undo, Preview, Hand Check, background jobs and Excel workflows remain available.
 
-          ### Portable installation
-          - Python runtime and pinned application dependencies are bundled.
-          - PowerShell installation is optional; double-click `Install ZYWtool.bat` only if you want a Start/Desktop shortcut and a per-user installation.
-          - The installer checks the Microsoft Visual C++ Redistributable x64 prerequisite.
+          ### Portable and permissions
+          - Bundled Python runtime and application libraries.
+          - Extract and run ZYWtool/ZYWtool.exe; no Python, pip or dependency installation required.
+          - Executable requests asInvoker; administrator elevation is not required.
+          - Portable ZIP contains no installer that attempts machine-wide prerequisite installation.
 
           ### Validation
-          - GitHub Actions CI passed.
-          - Regression suite: 20 tests passed.
-          - Python compile check and Preferences lint passed.
-          - First-run GUI smoke test passed.
-          - Portable ZIP CRC/integrity check passed.
+          - CI compile and regression suite.
+          - Windows portable build and ZIP integrity check.
+          - GUI Preferences smoke test.
           '@
-          gh release create "$env:GITHUB_REF_NAME" ".\release\ZYWtool-Windows-Portable.zip" --title "ZYWtool v1.0.5 - Windows Portable" --notes $notes
+          gh release create "$env:GITHUB_REF_NAME" ".\release\ZYWtool-Windows-Portable.zip" --title "ZYWtool v1.0.6 - Windows Portable" --notes $notes

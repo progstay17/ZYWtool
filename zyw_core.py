@@ -33,7 +33,7 @@ HEADERS = ["Device No.", "Date", "Activity", "Status", "QC", "Recorder Name", "L
 
 DEFAULT_CONFIG = {
     # [jam mulai, jam selesai, label persis seperti dropdown di sheet, nomor shift]
-    "config_version": 2,
+    "config_version": 3,
     "shift_mode": "enabled",
     "shifts": [
         ["07:00", "11:00", "7 AM - 11 AM", 1],
@@ -87,7 +87,7 @@ def load_config():
             if os.path.basename(legacy).lower().endswith((".xlsx", ".xlsm")):
                 cfg["excel_filename"] = os.path.basename(legacy)
 
-    cfg.setdefault("config_version", 2)
+    cfg.setdefault("config_version", 3)
     cfg.setdefault("shift_mode", "enabled")
     # Correct two display-only typos from the original defaults without changing shift times.
     legacy_labels = {"7 AM - 11 PM": "7 AM - 11 AM", "6:30 PM - 8:80 PM": "6:30 PM - 8:30 PM"}

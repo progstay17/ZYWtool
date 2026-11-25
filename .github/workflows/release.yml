@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - main
+    paths:
+      - ".github/workflows/release.yml"
 
 permissions:
   contents: write
@@ -54,4 +58,4 @@ jobs:
           - Windows portable build and ZIP integrity check.
           - GUI Preferences smoke test.
           '@
-          gh release create "$env:GITHUB_REF_NAME" ".\release\ZYWtool-Windows-Portable.zip" --title "ZYWtool v1.0.7 - Windows Portable" --notes $notes
+          gh release create "v1.0.7" ".\release\ZYWtool-Windows-Portable.zip" --title "ZYWtool v1.0.7 - Windows Portable" --notes $notes

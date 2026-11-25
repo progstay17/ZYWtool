@@ -18,6 +18,60 @@ class ConfigurationV106Tests(unittest.TestCase):
         self.assertEqual(core.NO_SHIFT, session.shift)
         self.assertEqual({}, session.split)
 
+    def test_no_shift_mode_omits_shift_segment_from_folder_name(self):
+        session = core.Session("session_1", "/tmp/session")
+        session.start = dt.datetime(2026, 11, 26, 9, 0, tzinfo=core.WIB)
+        session.location = "Jakarta"
+        session.capturer = "Fadhil"
+        session.device_no = "ZYW001"
+        session.activity = "Cleaning"
+        core.split_shifts(session, [], enabled=False)
+
+        names = core.name_map([session], {"shift_mode": "none", "shifts": []})
+        self.assertEqual(
+            "20261126_Jakarta_Fadhil_ZYW001_Cleaning",
+            names[session.name],
+        )
+        self.assertNotIn("S0", names[session.name])
+        self.assertNotIn("TANPASHIFT", names[session.name].upper())
+
+    def test_shift_based_folder_name_keeps_assigned_shift_segment(self):
+        session = core.Session("session_1", "/tmp/session")
+        session.start = dt.datetime(2026, 11, 26, 9, 0, tzinfo=core.WIB)
+        session.location = "Jakarta"
+        session.capturer = "Fadhil"
+        session.device_no = "ZYW001"
+        session.activity = "Cleaning"
+        shifts = [["07:00", "15:00", "Morning", 1]]
+        core.split_shifts(session, shifts, enabled=True)
+
+        names = core.name_map(
+            [session], {"shift_mode": "enabled", "shifts": shifts}
+        )
+        self.assertEqual(
+            "20261126_Jakarta_Fadhil_ZYW001_S1_Cleaning",
+            names[session.name],
+        )
+
+    def test_unassigned_session_never_gets_an_s0_folder_segment(self):
+        session = core.Session("session_1", "/tmp/session")
+        session.start = dt.datetime(2026, 11, 26, 23, 30, tzinfo=core.WIB)
+        session.location = "Jakarta"
+        session.capturer = "Fadhil"
+        session.device_no = "ZYW001"
+        session.activity = "Cleaning"
+        shifts = [["07:00", "20:00", "Day", 1]]
+        core.split_shifts(session, shifts, enabled=True)
+
+        names = core.name_map(
+            [session], {"shift_mode": "enabled", "shifts": shifts}
+        )
+        self.assertEqual(
+            "20261126_Jakarta_Fadhil_ZYW001_Cleaning",
+            names[session.name],
+        )
+        self.assertNotIn("S0", names[session.name])
+
     def test_legacy_default_shift_labels_are_corrected(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "config.json")

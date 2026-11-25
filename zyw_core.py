@@ -185,7 +185,7 @@ def apply_preset(cfg, name):
     if name not in catalog:
         raise ValueError(f"Preset tidak ditemukan: {name}")
     result = json.loads(json.dumps(cfg))
-    for key in ("shift_mode", "shifts", "check_mode", "qc", "supervisor", "activities", "hand_check"):
+    for key in ("shift_mode", "shifts", "check_mode", "qc", "supervisor", "activities", "hand_check", "naming"):
         if key in catalog[name]:
             result[key] = json.loads(json.dumps(catalog[name][key]))
     result["active_preset"] = name

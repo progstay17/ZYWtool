@@ -21,7 +21,7 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pytest ruff
       - name: Compile
-        run: python -m compileall -q handcheck.py handreport.py jobs.py preview_frames.py zywtool.py zyw_core.py undo_arrange.py
+        run: python -m compileall -q handcheck.py handreport.py jobs.py preview_frames.py zywtool.py zyw_core.py naming.py preset_io.py undo_arrange.py
       - name: Regression tests
         run: python -m pytest tests -q
       - name: Lint recorder-discovery tests
